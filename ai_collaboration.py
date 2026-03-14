@@ -2,11 +2,11 @@
 """
 AI Collaboration Tool
 =====================
-You + Claude + Jim (Gemini) working together on coding projects.
+You + Claude + Gemini working together on coding projects.
 
 Each turn:
   1. Claude thinks and responds
-  2. Jim (Gemini) builds on Claude's response
+  2. Gemini builds on Claude's response
   3. You can jump in at any time
   ...repeat until the project is done.
 
@@ -45,23 +45,23 @@ SEPARATOR     = "─" * 72
 
 # ── system prompts ────────────────────────────────────────────────────────────
 CLAUDE_SYSTEM = """
-You are Claude, an expert software engineer collaborating with Jim (Google Gemini)
+You are Claude, an expert software engineer collaborating with Gemini (Google)
 and the user on a coding project.
 
 Your role:
-- Architect solutions, write clean code, review Jim's suggestions
-- Build on Jim's last message and on the user's guidance
+- Architect solutions, write clean code, review Gemini's suggestions
+- Build on Gemini's last message and on the user's guidance
 - Be concrete: produce real code, file names, commands
-- After each response, hand off naturally to Jim by ending with
-  something like "Jim, what do you think?" or "Jim, can you handle X?"
+- After each response, hand off naturally to Gemini by ending with
+  something like "Gemini, what do you think?" or "Gemini, can you handle X?"
 - When the project is genuinely complete (working code delivered, all
   requirements met), write {done} on its own line at the very end.
 
 Keep responses focused and actionable. This is a real coding session.
 """.format(done=DONE_SIGNAL).strip()
 
-JIM_SYSTEM = """
-You are Jim, a Google Gemini AI and expert software engineer collaborating
+GEMINI_SYSTEM = """
+You are Gemini, a Google AI and expert software engineer collaborating
 with Claude (Anthropic) and the user on a coding project.
 
 Your role:
@@ -82,7 +82,7 @@ class C:
     RESET  = "\033[0m"
     BOLD   = "\033[1m"
     BLUE   = "\033[94m"    # Claude
-    GREEN  = "\033[92m"    # Jim
+    GREEN  = "\033[92m"    # Gemini
     YELLOW = "\033[93m"    # User
     CYAN   = "\033[96m"    # System / info
     RED    = "\033[91m"    # Error
@@ -129,12 +129,12 @@ def build_clients() -> tuple:
     claude_client = anthropic.Anthropic(api_key=anthropic_key)
 
     genai.configure(api_key=gemini_key)
-    jim_client = genai.GenerativeModel(
+    gemini_client = genai.GenerativeModel(
         model_name=GEMINI_MODEL,
-        system_instruction=JIM_SYSTEM,
+        system_instruction=GEMINI_SYSTEM,
     )
 
-    return claude_client, jim_client
+    return claude_client, gemini_client
 
 
 # ── AI callers ────────────────────────────────────────────────────────────────
@@ -165,21 +165,20 @@ def ask_claude(client: anthropic.Anthropic,
     return full_text.strip()
 
 
-def ask_jim(client,           # google GenerativeModel
-            history: list[dict],
-            project_desc: str) -> str:
-    """Send the shared history to Jim (Gemini) and get its next message."""
-    # Gemini uses a flat list of parts
+def ask_gemini(client,           # google GenerativeModel
+               history: list[dict],
+               project_desc: str) -> str:
+    """Send the shared history to Gemini and get its next message."""
     conversation_text = f"Project goal: {project_desc}\n\n"
     conversation_text += "=== Conversation so far ===\n"
     for entry in history:
         conversation_text += f"\n[{entry['speaker']}]:\n{entry['text']}\n"
-    conversation_text += "\n=== Your turn, Jim ===\n"
+    conversation_text += "\n=== Your turn, Gemini ===\n"
 
     response = client.generate_content(conversation_text)
     text = response.text.strip()
 
-    # stream-print Jim's response character by character for parity UX
+    # stream-print character by character for parity UX
     for char in text:
         print(char, end="", flush=True)
     print()
@@ -203,7 +202,7 @@ def get_user_input(prompt: str = "") -> Optional[str]:
 
 
 # ── main loop ─────────────────────────────────────────────────────────────────
-def run_session(claude_client, jim_client, project_desc: str) -> None:
+def run_session(claude_client, gemini_client, project_desc: str) -> None:
     history: list[dict] = []
     turn = 0
 
@@ -237,19 +236,19 @@ def run_session(claude_client, jim_client, project_desc: str) -> None:
         if user_text:
             history.append({"speaker": "User", "text": user_text})
 
-        # ── Jim's turn ───────────────────────────────────────────────────────
-        print_header(f"JIM (Gemini)  (turn {turn})", C.GREEN)
+        # ── Gemini's turn ────────────────────────────────────────────────────
+        print_header(f"GEMINI  (turn {turn})", C.GREEN)
         try:
-            jim_text = ask_jim(jim_client, history, project_desc)
+            gemini_text = ask_gemini(gemini_client, history, project_desc)
         except Exception as e:
-            print(f"{C.RED}Jim error: {e}{C.RESET}")
+            print(f"{C.RED}Gemini error: {e}{C.RESET}")
             break
-        history.append({"speaker": "Jim", "text": jim_text})
-        if is_done(jim_text):
-            print(f"\n{C.CYAN}{C.BOLD}Jim signals the project is complete!{C.RESET}")
+        history.append({"speaker": "Gemini", "text": gemini_text})
+        if is_done(gemini_text):
+            print(f"\n{C.CYAN}{C.BOLD}Gemini signals the project is complete!{C.RESET}")
             break
 
-        # ── user interjection after Jim ──────────────────────────────────────
+        # ── user interjection after Gemini ───────────────────────────────────
         user_text = get_user_input()
         if user_text is None:
             print(f"\n{C.CYAN}Session ended by user.{C.RESET}")
@@ -273,13 +272,13 @@ def run_session(claude_client, jim_client, project_desc: str) -> None:
 def main() -> None:
     print(f"""
 {C.CYAN}{C.BOLD}╔══════════════════════════════════════════════════════════════════════╗
-║          AI COLLABORATION TOOL  —  You + Claude + Jim             ║
+║         AI COLLABORATION TOOL  —  You + Claude + Gemini           ║
 ╚══════════════════════════════════════════════════════════════════════╝{C.RESET}
 
   Three-way coding collaboration:
-    {C.BLUE}Claude{C.RESET}  →  architect, coder, reviewer
-    {C.GREEN}Jim{C.RESET}     →  implementer, tester, optimizer (Gemini)
-    {C.YELLOW}You{C.RESET}     →  guide, product owner, decision maker
+    {C.BLUE}Claude{C.RESET}   →  architect, coder, reviewer
+    {C.GREEN}Gemini{C.RESET}   →  implementer, tester, optimizer
+    {C.YELLOW}You{C.RESET}      →  guide, product owner, decision maker
 
   The AIs prompt each other until the project is complete.
   You can jump in at any turn.
@@ -305,11 +304,11 @@ def main() -> None:
         sys.exit("No project description provided.")
 
     # ── build clients ────────────────────────────────────────────────────────
-    print(f"\n{C.CYAN}Connecting to Claude and Jim…{C.RESET}")
-    claude_client, jim_client = build_clients()
+    print(f"\n{C.CYAN}Connecting to Claude and Gemini…{C.RESET}")
+    claude_client, gemini_client = build_clients()
     print(f"{C.CYAN}Connected! Starting session…{C.RESET}")
 
-    run_session(claude_client, jim_client, project_desc)
+    run_session(claude_client, gemini_client, project_desc)
 
 
 if __name__ == "__main__":
