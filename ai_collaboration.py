@@ -16,7 +16,7 @@ Usage:
 Requirements:
     ANTHROPIC_API_KEY  - Anthropic (Claude)
     OPENAI_API_KEY     - OpenAI   (GPT-4o)
-    GEMINI_API_KEY     - Google   (Gemini)
+    GEMINI_API_KEY     - Google   (Gemini 2.0 Flash)
 """
 
 import os
@@ -37,15 +37,15 @@ except ImportError:
     sys.exit("Missing: pip install openai")
 
 try:
-    import google.generativeai as genai
+    from google import genai as genai_lib
 except ImportError:
-    sys.exit("Missing: pip install google-generativeai")
+    sys.exit("Missing: pip install google-genai")
 
 
 # ── constants ──────────────────────────────────────────────────────────────────
 CLAUDE_MODEL        = "claude-opus-4-6"
 GPT_MODEL           = "gpt-4o"
-GEMINI_MODEL        = "gemini-1.5-pro"
+GEMINI_MODEL        = "gemini-2.0-flash"
 
 MAX_TURNS_PER_PHASE = 20          # safety cap per phase
 PHASE_DONE_SIGNAL   = "PHASE_COMPLETE"    # advance to next phase
@@ -200,11 +200,7 @@ def build_clients() -> tuple:
 
     gpt_client = openai_lib.OpenAI(api_key=openai_key)
 
-    genai.configure(api_key=gemini_key)
-    gemini_client = genai.GenerativeModel(
-        model_name=GEMINI_MODEL,
-        system_instruction=GEMINI_SYSTEM,
-    )
+    gemini_client = genai_lib.Client(api_key=gemini_key)
 
     return claude_client, gpt_client, gemini_client
 
@@ -277,22 +273,29 @@ def ask_gpt(client: openai_lib.OpenAI,
     return full_text.strip()
 
 
-def ask_gemini(client,
+def ask_gemini(client: genai_lib.Client,
                history: list[dict],
                project_desc: str,
                phase_name: str) -> str:
-    """Stream a response from Gemini (character-by-character for UX parity)."""
+    """Stream a response from Gemini."""
     prompt = _history_context(history, project_desc, phase_name)
     prompt += f"\n=== Your turn, Gemini (phase: {phase_name}) ===\n"
 
-    response  = client.generate_content(prompt)
-    text      = response.text.strip()
+    full_text = ""
+    for chunk in client.models.generate_content_stream(
+        model=GEMINI_MODEL,
+        contents=prompt,
+        config=genai_lib.types.GenerateContentConfig(
+            system_instruction=GEMINI_SYSTEM,
+            max_output_tokens=4096,
+        ),
+    ):
+        piece = chunk.text or ""
+        print(piece, end="", flush=True)
+        full_text += piece
 
-    for char in text:
-        print(char, end="", flush=True)
     print()
-
-    return text
+    return full_text.strip()
 
 
 # ── phase helpers ──────────────────────────────────────────────────────────────
