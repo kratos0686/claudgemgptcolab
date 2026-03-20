@@ -300,6 +300,10 @@ def ask_claude(client: anthropic.Anthropic,
         content = f"[{entry['speaker']}]: {entry['text']}"
         messages.append({"role": role, "content": content})
 
+    # Anthropic requires the last message to be "user" role
+    if messages and messages[-1]["role"] == "assistant":
+        messages.append({"role": "user", "content": "Please continue."})
+
     system = (
         ARC_CLAUDE_SYSTEM
         + f"\n\nProject: {project_desc}\nCurrent phase: {phase_name}"
