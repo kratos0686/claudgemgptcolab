@@ -20,8 +20,13 @@ Requirements:
 """
 
 import os
+import re
 import sys
 import textwrap
+import zipfile
+import subprocess
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 
@@ -87,6 +92,11 @@ Each turn you MUST do ALL of the following in order:
 2. CONTRIBUTE concrete output for the CURRENT phase — no vague plans, no
    pseudocode; real deliverables (plans / designs / code / tests / docs /
    config as appropriate for the phase).
+   IMPORTANT: When writing code files, always label them with their filename
+   using one of these formats so they can be extracted and compiled:
+     - Fence tag:      ```python:main.py
+     - First comment:  # main.py   (first line inside the fence)
+     - Bold label:     **main.py** on the line before the fence
 
 3. HAND OFF to the next AI, e.g.  "GPT-4o, please review and continue."
 
@@ -369,6 +379,7 @@ def run_session(claude_client, gpt_client, gemini_client, project_desc: str) -> 
                 if project_done:
                     print(f"\n{C.CYAN}{C.BOLD}{ai_name} signals the project is complete!{C.RESET}")
                     _print_summary(total_turns, history, phase_idx)
+                    package_project(history, project_desc, total_turns)
                     return
 
                 if phase_done:
@@ -377,6 +388,7 @@ def run_session(claude_client, gpt_client, gemini_client, project_desc: str) -> 
                     if phase_idx >= len(PHASES):
                         print(f"\n{C.CYAN}{C.BOLD}All phases complete!{C.RESET}")
                         _print_summary(total_turns, history, phase_idx - 1)
+                        package_project(history, project_desc, total_turns)
                         return
                     break   # break AI loop → start next phase
 
@@ -392,6 +404,7 @@ def run_session(claude_client, gpt_client, gemini_client, project_desc: str) -> 
                     if phase_idx >= len(PHASES):
                         print(f"\n{C.CYAN}{C.BOLD}All phases complete!{C.RESET}")
                         _print_summary(total_turns, history, phase_idx - 1)
+                        package_project(history, project_desc, total_turns)
                         return
                     break   # break AI loop → start next phase
                 if user_text:
@@ -407,6 +420,167 @@ def run_session(claude_client, gpt_client, gemini_client, project_desc: str) -> 
             phase_idx += 1
 
     _print_summary(total_turns, history, len(PHASES) - 1)
+    package_project(history, project_desc, total_turns)
+
+
+# ── packaging ──────────────────────────────────────────────────────────────────
+# Matches ```lang:filename  or  ```filename  fence openings
+_FENCE_FILENAME  = re.compile(r'^```[\w.+-]*:?([\w./\\-]+\.[\w]+)\s*$', re.MULTILINE)
+# Matches  # filename.py  //  filename.py  at the very first line of a block
+_FIRST_LINE_NAME = re.compile(r'^(?:#|//|--|<!--)\s*([\w./\\-]+\.[\w]{1,6})\s*$')
+# Maps fence language tag → default file extension
+_LANG_EXT = {
+    "python": "py", "py": "py", "javascript": "js", "js": "js",
+    "typescript": "ts", "ts": "ts", "bash": "sh", "sh": "sh",
+    "shell": "sh", "html": "html", "css": "css", "json": "json",
+    "yaml": "yml", "yml": "yml", "toml": "toml", "dockerfile": "dockerfile",
+    "sql": "sql", "go": "go", "rust": "rs", "java": "java", "cpp": "cpp",
+    "c": "c",
+}
+
+
+def _extract_code_files(history: list[dict]) -> dict[str, str]:
+    """Return {filename: code} extracted from all AI messages in history."""
+    files: dict[str, str] = {}
+    counters: dict[str, int] = {}
+
+    # Full fenced block:  ```[lang][:filename]\n<code>\n```
+    block_re = re.compile(r'```([\w.+-]*)\n(.*?)```', re.DOTALL)
+
+    for entry in history:
+        if entry["speaker"] not in ("Claude", "GPT-4o", "Gemini"):
+            continue
+        text = entry["text"]
+
+        # Check for **filename.ext** label immediately before a fence
+        labelled = re.findall(
+            r'\*\*([\w./\\-]+\.[\w]{1,6})\*\*\s*\n```[\w.+-]*\n(.*?)```',
+            text, re.DOTALL)
+        for fname, code in labelled:
+            files[fname.strip()] = code.rstrip()
+
+        for m in block_re.finditer(text):
+            lang  = m.group(1).strip().lower()
+            code  = m.group(2).rstrip()
+            fname = None
+
+            # 1. filename embedded in fence tag:  ```python:main.py
+            colon = lang.find(":")
+            if colon != -1:
+                fname = lang[colon + 1:]
+                lang  = lang[:colon]
+
+            # 2. first line of code is a filename comment: # main.py
+            if not fname:
+                first = code.split("\n", 1)[0]
+                hit = _FIRST_LINE_NAME.match(first)
+                if hit:
+                    fname = hit.group(1)
+                    code  = code.split("\n", 1)[1] if "\n" in code else code
+
+            # 3. already captured via **label** above — skip duplicate
+            if fname and fname in files:
+                continue
+
+            # 4. fallback: unnamed_N.ext
+            if not fname:
+                ext = _LANG_EXT.get(lang, lang or "txt")
+                counters[ext] = counters.get(ext, 0) + 1
+                fname = f"unnamed_{counters[ext]}.{ext}"
+
+            if fname not in files:
+                files[fname] = code
+
+    return files
+
+
+def package_project(history: list[dict], project_desc: str, total_turns: int) -> None:
+    """Save all generated code files, then compile to a single executable or zip."""
+    timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_name  = re.sub(r'[^\w]+', '_', project_desc[:40]).strip('_').lower()
+    out_dir    = Path(f"build_{safe_name}_{timestamp}")
+    out_dir.mkdir(exist_ok=True)
+
+    print(f"\n{C.CYAN}{C.BOLD}{SEPARATOR}")
+    print("  PACKAGING PROJECT")
+    print(f"{SEPARATOR}{C.RESET}\n")
+
+    # ── extract & save code files ─────────────────────────────────────────────
+    files = _extract_code_files(history)
+
+    if files:
+        for fname, code in files.items():
+            dest = out_dir / fname
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(code, encoding="utf-8")
+            print(f"  {C.GREEN}✓{C.RESET}  {fname}")
+    else:
+        print(f"  {C.YELLOW}No named code files found in conversation.{C.RESET}")
+
+    # ── save full transcript ──────────────────────────────────────────────────
+    transcript = out_dir / "TRANSCRIPT.md"
+    with transcript.open("w", encoding="utf-8") as f:
+        f.write(f"# AI Collaboration Transcript\n\n")
+        f.write(f"**Project:** {project_desc}\n\n")
+        f.write(f"**Total turns:** {total_turns}\n\n---\n\n")
+        for entry in history:
+            f.write(f"## [{entry['speaker']}]\n\n{entry['text']}\n\n---\n\n")
+    print(f"  {C.GREEN}✓{C.RESET}  TRANSCRIPT.md")
+
+    # ── try PyInstaller ───────────────────────────────────────────────────────
+    entry_point = None
+    for candidate in ["main.py", "app.py", "run.py", "cli.py", "server.py"]:
+        if (out_dir / candidate).exists():
+            entry_point = out_dir / candidate
+            break
+
+    built_exe = None
+    if entry_point:
+        print(f"\n{C.CYAN}Building executable from {entry_point.name}…{C.RESET}")
+        dist_dir = out_dir / "dist"
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable, "-m", "PyInstaller",
+                    "--onefile",
+                    "--distpath", str(dist_dir),
+                    "--workpath", str(out_dir / "build_tmp"),
+                    "--specpath", str(out_dir),
+                    "--name", safe_name,
+                    str(entry_point),
+                ],
+                capture_output=True, text=True, timeout=180,
+            )
+            if result.returncode == 0:
+                exe_files = list(dist_dir.glob("*"))
+                if exe_files:
+                    built_exe = exe_files[0]
+                    print(f"  {C.GREEN}✓{C.RESET}  Executable: {built_exe}")
+                else:
+                    print(f"  {C.YELLOW}PyInstaller finished but no output found.{C.RESET}")
+            else:
+                print(f"  {C.YELLOW}PyInstaller failed:{C.RESET}")
+                for line in result.stderr.strip().splitlines()[-6:]:
+                    print(f"    {line}")
+        except FileNotFoundError:
+            print(f"  {C.YELLOW}PyInstaller not installed — run: pip install pyinstaller{C.RESET}")
+        except subprocess.TimeoutExpired:
+            print(f"  {C.YELLOW}PyInstaller timed out.{C.RESET}")
+    else:
+        print(f"\n  {C.DIM}No entry point found (main.py / app.py / run.py) — skipping PyInstaller.{C.RESET}")
+
+    # ── zip everything up ─────────────────────────────────────────────────────
+    zip_path = Path(f"{safe_name}_{timestamp}.zip")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for fp in sorted(out_dir.rglob("*")):
+            if fp.is_file() and "build_tmp" not in fp.parts:
+                zf.write(fp, fp.relative_to(out_dir))
+        if built_exe and built_exe.exists():
+            zf.write(built_exe, built_exe.name)
+
+    print(f"\n  {C.GREEN}✓{C.RESET}  Archive: {zip_path}")
+    print(f"  {C.GREEN}✓{C.RESET}  Source:  {out_dir}/")
+    print(f"\n{C.CYAN}{C.BOLD}Ready to use!{C.RESET}\n")
 
 
 def _print_summary(turns: int, history: list[dict], last_phase_idx: int) -> None:
