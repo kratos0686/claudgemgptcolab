@@ -217,7 +217,7 @@ def build_clients() -> tuple:
 
 # ── AI callers ─────────────────────────────────────────────────────────────────
 def _history_context(history: list[dict], project_desc: str, phase_name: str) -> str:
-    """Build a readable conversation string for Gemini (and GPT context)."""
+    """Build a readable conversation string for Gemini."""
     ctx = f"Project goal: {project_desc}\nCurrent phase: {phase_name}\n\n"
     ctx += "=== Conversation so far ===\n"
     for entry in history:
