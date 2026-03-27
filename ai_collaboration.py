@@ -48,7 +48,7 @@ except ImportError:
 
 
 # ── constants ──────────────────────────────────────────────────────────────────
-CLAUDE_MODEL        = "claude-opus-4-6"
+CLAUDE_MODEL        = "claude-sonnet-4-6"
 GPT_MODEL           = "gpt-4o"
 GEMINI_MODEL        = "gemini-2.0-flash"
 
@@ -287,22 +287,27 @@ def ask_gemini(client: genai_lib.Client,
                history: list[dict],
                project_desc: str,
                phase_name: str) -> str:
-    """Stream a response from Gemini."""
+    """Stream a response from Gemini token-by-token."""
     prompt = _history_context(history, project_desc, phase_name)
     prompt += f"\n=== Your turn, Gemini (phase: {phase_name}) ===\n"
 
     full_text = ""
-    for chunk in client.models.generate_content_stream(
+    with client.models.generate_content_stream(
         model=GEMINI_MODEL,
         contents=prompt,
         config=genai_lib.types.GenerateContentConfig(
             system_instruction=GEMINI_SYSTEM,
             max_output_tokens=4096,
         ),
-    ):
-        piece = chunk.text or ""
-        print(piece, end="", flush=True)
-        full_text += piece
+    ) as stream:
+        for chunk in stream:
+            try:
+                piece = chunk.candidates[0].content.parts[0].text
+            except (AttributeError, IndexError):
+                piece = ""
+            if piece:
+                print(piece, end="", flush=True)
+                full_text += piece
 
     print()
     return full_text.strip()
