@@ -301,10 +301,12 @@ def ask_gemini(client: genai_lib.Client,
         ),
     ) as stream:
         for chunk in stream:
-            try:
-                piece = chunk.candidates[0].content.parts[0].text
-            except (AttributeError, IndexError):
-                piece = ""
+            piece = getattr(chunk, "text", None)
+            if piece is None:
+                try:
+                    piece = chunk.candidates[0].content.parts[0].text
+                except (AttributeError, IndexError, TypeError):
+                    piece = ""
             if piece:
                 print(piece, end="", flush=True)
                 full_text += piece
