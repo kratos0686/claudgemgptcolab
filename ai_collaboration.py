@@ -166,24 +166,6 @@ def print_phase_banner(phase_idx: int) -> None:
     print("\n" + "  ".join(parts) + "\n")
 
 
-def wrap(text: str, indent: int = 2) -> str:
-    prefix = " " * indent
-    lines = []
-    for para in text.split("\n"):
-        if para.strip() == "":
-            lines.append("")
-        else:
-            wrapped = textwrap.fill(
-                para, width=100,
-                initial_indent=prefix,
-                subsequent_indent=prefix,
-                break_long_words=False,
-                break_on_hyphens=False,
-            )
-            lines.append(wrapped)
-    return "\n".join(lines)
-
-
 # ── clients ────────────────────────────────────────────────────────────────────
 def build_clients() -> tuple:
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
