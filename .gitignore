@@ -45,3 +45,10 @@ __pycache__/
 *.pyc
 *.pyo
 .env
+
+# Portable runtime (USB-local, never commit)
+.python/
+.venv/
+build_*/
+*.zip
+*.spec

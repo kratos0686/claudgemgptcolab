@@ -8,36 +8,75 @@ Each AI leads specific phases and reviews every other AI's output every turn.
 
 ---
 
-## Windows Quick Start
+## Portable USB Setup (no install required)
 
-### 1. Install Python
-Download from [python.org](https://python.org) — check **"Add to PATH"** during install.
+Copy the entire folder to a USB drive. The tool carries its own Python and packages.
 
-### 2. Get the files
-Save `ai_collaboration.py` and `launch.bat` to a folder, e.g.:
+### Windows — fully self-contained
+
+**First time only** (needs internet, ~30 MB):
 ```
-C:\Users\krato\Documents\Restoration-ai\
+setup_portable.bat
+```
+Downloads Python 3.12 embeddable + all packages directly onto the drive.
+
+**Every time after:**
+```
+run.bat
+```
+Uses the bundled Python at `.python\` — no system Python needed.
+
+### Mac / Linux
+
+Python 3 is already on every Mac and Linux machine. On first run a `.venv/`
+folder is created on the USB drive and packages are installed inside it.
+
+```bash
+chmod +x run.sh   # once
+./run.sh
 ```
 
-### 3. Install dependencies
-Open Command Prompt in that folder:
-```bat
-pip install anthropic>=0.40.0 google-genai>=0.8.0 openai>=1.0.0
+The `.venv/` folder travels with the USB drive. On a new machine the script
+detects if packages are missing and reinstalls automatically.
+
+---
+
+## USB Drive Layout
+
+```
+AI-Collaboration-Tool/
+├── ai_collaboration.py   ← main tool
+├── test_apis.py          ← verify all three API keys work
+├── requirements.txt
+├── run.bat               ← Windows launcher
+├── run.sh                ← Mac / Linux launcher
+├── setup_portable.bat    ← Windows first-time setup (downloads Python)
+├── README.md
+├── .python/              ← embedded Python (Windows, created by setup_portable.bat)
+└── .venv/                ← packages venv (Mac/Linux, created on first run)
 ```
 
-### 4. Set API keys (permanent)
-Search **"Environment Variables"** in Windows Start → Edit system environment variables → Environment Variables → add:
+---
 
-| Variable | Value |
+## API Keys
+
+Set these as environment variables before running. They are never stored in any file.
+
+| Variable | Where to get it |
 |---|---|
-| `ANTHROPIC_API_KEY` | `sk-ant-...` |
-| `OPENAI_API_KEY` | `sk-...` |
-| `GEMINI_API_KEY` | `AIza...` |
+| `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com/settings/keys) |
+| `OPENAI_API_KEY` | [platform.openai.com](https://platform.openai.com/api-keys) |
+| `GEMINI_API_KEY` | [aistudio.google.com](https://aistudio.google.com/apikey) |
 
-> **Or** edit `launch.bat` directly and paste your keys in the marked lines — no need to set system env vars.
+**Windows** — set permanently:
+Start → "Edit system environment variables" → Environment Variables → New
 
-### 5. Run
-Double-click **`launch.bat`** — it installs missing deps and launches the tool automatically.
+**Mac / Linux** — add to `~/.bashrc` or `~/.zshrc`:
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+export OPENAI_API_KEY=sk-...
+export GEMINI_API_KEY=AIza...
+```
 
 ---
 
@@ -54,17 +93,19 @@ Double-click **`launch.bat`** — it installs missing deps and launches the tool
 
 ## Session Commands
 
-| Key | Action |
+| Input | Action |
 |---|---|
 | Enter | Let AIs continue |
 | `<message>` | Send guidance to the team |
 | `next` | Skip to the next phase |
-| Ctrl-C | End the session |
+| Ctrl-C | End the session (saves transcript) |
 
 ---
 
-## API Keys
+## Output
 
-- **Anthropic (Claude):** [console.anthropic.com](https://console.anthropic.com)
-- **OpenAI (GPT-4o):** [platform.openai.com](https://platform.openai.com)
-- **Google (Gemini):** [aistudio.google.com](https://aistudio.google.com)
+At the end of every completed session the tool automatically:
+1. Saves all generated code files to `build_<project>_<timestamp>/`
+2. Saves the full conversation to `TRANSCRIPT.md`
+3. Runs PyInstaller to compile a single executable (if an entry point is found)
+4. Creates a `.zip` archive of everything — ready to share or deploy
