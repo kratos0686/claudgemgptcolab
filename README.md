@@ -73,9 +73,9 @@ Start → "Edit system environment variables" → Environment Variables → New
 
 **Mac / Linux** — add to `~/.bashrc` or `~/.zshrc`:
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-export OPENAI_API_KEY=sk-...
-export GEMINI_API_KEY=AIza...
+export ANTHROPIC_API_KEY=(YOURAPIKEYHERE)
+export OPENAI_API_KEY=(YOURAPIKEYHERE)
+export GEMINI_API_KEY=(YYOURAPIKEYHERE)
 ```
 
 ---
