@@ -57,14 +57,15 @@ PHASE_DONE_SIGNAL   = "PHASE_COMPLETE"    # advance to next phase
 DONE_SIGNAL         = "PROJECT_COMPLETE"  # whole project is finished
 SEPARATOR           = "─" * 72
 
-# Full development lifecycle — each entry is (name, goal, lead_ai)
+# Full development lifecycle — each entry is (name, goal, lead_ai, loops)
+# loops > 1 means the phase repeats that many times before advancing
 PHASES = [
-    ("PLAN",   "Define requirements, user stories, constraints, and a detailed task list",            "Claude"),
-    ("DESIGN", "Architecture, tech stack, data models, folder structure, API contracts",              "Claude"),
-    ("BUILD",  "Write all production-quality implementation code",                                    "Gemini"),
-    ("TEST",   "Write unit tests, integration tests, and verify edge cases",                          "GPT-4o"),
-    ("DOCS",   "Write README, inline docstrings, usage examples, and API reference",                  "GPT-4o"),
-    ("SHIP",   "Dockerfile, CI/CD config, env-var checklist, deployment runbook",                     "Gemini"),
+    ("PLAN",   "Define requirements, user stories, constraints, and a detailed task list",            "Claude", 1),
+    ("DESIGN", "Architecture, tech stack, data models, folder structure, API contracts",              "Claude", 3),
+    ("BUILD",  "Write all production-quality implementation code",                                    "Gemini", 1),
+    ("TEST",   "Write unit tests, integration tests, and verify edge cases",                          "GPT-4o", 1),
+    ("DOCS",   "Write README, inline docstrings, usage examples, and API reference",                  "GPT-4o", 1),
+    ("SHIP",   "Dockerfile, CI/CD config, env-var checklist, deployment runbook",                     "Gemini", 1),
 ]
 
 # Turn order — rotates every round
@@ -74,7 +75,7 @@ AI_ORDER = ["Claude", "GPT-4o", "Gemini"]
 # ── system prompts ─────────────────────────────────────────────────────────────
 _PHASE_LIST = "\n".join(
     f"  {i + 1}. [{name}] ({lead}  leads) — {goal}"
-    for i, (name, goal, lead) in enumerate(PHASES)
+    for i, (name, goal, lead, _loops) in enumerate(PHASES)
 )
 
 _COMMON = f"""
@@ -154,9 +155,9 @@ def print_separator(speaker: str, colour: str, extra: str = "") -> None:
     print(f"{SEPARATOR}{C.RESET}\n")
 
 
-def print_phase_banner(phase_idx: int) -> None:
+def print_phase_banner(phase_idx: int, loop_num: int = 1, total_loops: int = 1) -> None:
     parts = []
-    for i, (name, _, lead) in enumerate(PHASES):
+    for i, (name, _, lead, _loops) in enumerate(PHASES):
         if i < phase_idx:
             parts.append(f"{C.DIM}[{name} ✓]{C.RESET}")
         elif i == phase_idx:
@@ -335,10 +336,15 @@ def run_session(claude_client, gpt_client, gemini_client, project_desc: str) -> 
 
     history.append({"speaker": "User", "text": project_desc})
 
+    # track remaining loops per phase index
+    phase_loops_remaining = {i: loops for i, (_, _, _, loops) in enumerate(PHASES)}
+
     while phase_idx < len(PHASES):
-        phase_name, phase_goal, phase_lead = PHASES[phase_idx]
-        print_phase_banner(phase_idx)
-        print(f"{C.CYAN}{C.BOLD}Phase: {phase_name}{C.RESET}  —  {phase_goal}")
+        phase_name, phase_goal, phase_lead, phase_total_loops = PHASES[phase_idx]
+        loop_num = phase_total_loops - phase_loops_remaining[phase_idx] + 1
+        print_phase_banner(phase_idx, loop_num, phase_total_loops)
+        loop_label = f" (loop {loop_num}/{phase_total_loops})" if phase_total_loops > 1 else ""
+        print(f"{C.CYAN}{C.BOLD}Phase: {phase_name}{loop_label}{C.RESET}  —  {phase_goal}")
         print(f"{C.DIM}Lead AI: {phase_lead}{C.RESET}\n")
 
         turn_in_phase = 0
@@ -350,7 +356,7 @@ def run_session(claude_client, gpt_client, gemini_client, project_desc: str) -> 
                 colour = AI_COLOUR[ai_name]
 
                 print_separator(
-                    f"{ai_name}  (phase {phase_idx + 1}/{len(PHASES)}: {phase_name} · turn {turn_in_phase})",
+                    f"{ai_name}  (phase {phase_idx + 1}/{len(PHASES)}: {phase_name}{loop_label} · turn {turn_in_phase})",
                     colour,
                     f"{'← LEAD' if ai_name == phase_lead else ''}",
                 )
@@ -372,6 +378,12 @@ def run_session(claude_client, gpt_client, gemini_client, project_desc: str) -> 
                     return
 
                 if phase_done:
+                    phase_loops_remaining[phase_idx] -= 1
+                    if phase_loops_remaining[phase_idx] > 0:
+                        remaining = phase_loops_remaining[phase_idx]
+                        print(f"\n{C.CYAN}{C.BOLD}{ai_name} signals {phase_name} loop {loop_num} complete. "
+                              f"{remaining} loop(s) remaining — restarting phase.{C.RESET}")
+                        break   # break AI loop → restart same phase
                     print(f"\n{C.CYAN}{C.BOLD}{ai_name} signals phase {phase_name} is complete.{C.RESET}")
                     phase_idx += 1
                     if phase_idx >= len(PHASES):
