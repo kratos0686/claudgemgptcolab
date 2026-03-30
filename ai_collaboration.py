@@ -216,8 +216,12 @@ def ask_claude(client: anthropic.Anthropic,
     # Build raw message list
     raw = []
     for entry in history:
-        role    = "assistant" if entry["speaker"] == "Claude" else "user"
-        content = f"[{entry['speaker']}]: {entry['text']}"
+        speaker = str(entry.get("speaker", "")).strip()
+        text = str(entry.get("text", "")).strip()
+        if not text:
+            continue
+        role = "assistant" if speaker == "Claude" else "user"
+        content = f"[{speaker or 'Unknown'}]: {text}"
         raw.append({"role": role, "content": content})
 
     # Anthropic requires strictly alternating user/assistant roles.
@@ -234,6 +238,20 @@ def ask_claude(client: anthropic.Anthropic,
         messages = [{"role": "user", "content": f"Project goal: {project_desc}"}]
     elif messages[0]["role"] != "user":
         messages.insert(0, {"role": "user", "content": f"Project goal: {project_desc}"})
+
+    # Anthropic non-prefill models require the final turn to be from user.
+    if messages[-1]["role"] != "user":
+        messages.append({
+            "role": "user",
+            "content": f"Please continue with your turn for the {phase_name} phase.",
+        })
+
+    # Guard against malformed retries by validating alternation before send.
+    if messages[0]["role"] != "user" or messages[-1]["role"] != "user":
+        raise ValueError("Claude payload must start and end with user role")
+    for i in range(1, len(messages)):
+        if messages[i]["role"] == messages[i - 1]["role"]:
+            raise ValueError(f"Claude payload has non-alternating roles at index {i}")
 
     full_text = ""
     with client.messages.stream(
