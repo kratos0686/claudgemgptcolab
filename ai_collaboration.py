@@ -213,11 +213,27 @@ def ask_claude(client: anthropic.Anthropic,
                project_desc: str,
                phase_name: str) -> str:
     """Stream a response from Claude."""
-    messages = []
+    # Build raw message list
+    raw = []
     for entry in history:
         role    = "assistant" if entry["speaker"] == "Claude" else "user"
         content = f"[{entry['speaker']}]: {entry['text']}"
-        messages.append({"role": role, "content": content})
+        raw.append({"role": role, "content": content})
+
+    # Anthropic requires strictly alternating user/assistant roles.
+    # Merge consecutive messages with the same role into one.
+    messages = []
+    for msg in raw:
+        if messages and messages[-1]["role"] == msg["role"]:
+            messages[-1]["content"] += "\n\n" + msg["content"]
+        else:
+            messages.append({"role": msg["role"], "content": msg["content"]})
+
+    # Must start with a user message
+    if not messages:
+        messages = [{"role": "user", "content": f"Project goal: {project_desc}"}]
+    elif messages[0]["role"] != "user":
+        messages.insert(0, {"role": "user", "content": f"Project goal: {project_desc}"})
 
     full_text = ""
     with client.messages.stream(
