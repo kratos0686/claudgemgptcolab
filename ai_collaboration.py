@@ -399,7 +399,8 @@ def run_session(claude_client, gpt_client, gemini_client, project_desc: str) -> 
                     ai_text = callers[ai_name](history, project_desc, phase_name)
                 except Exception as exc:
                     print(f"{C.RED}{ai_name} error: {exc}{C.RESET}")
-                    break
+                    print(f"{C.YELLOW}Skipping {ai_name} this turn and continuing…{C.RESET}")
+                    continue
 
                 history.append({"speaker": ai_name, "text": ai_text})
 

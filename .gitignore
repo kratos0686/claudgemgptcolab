@@ -46,6 +46,14 @@ __pycache__/
 *.pyo
 .env
 
+# Autonomous agent runtime files
+.autonomous_agent.json
+.autonomous_agent.log
+.autonomous_agent_history.jsonl
+.agent_collaboration.jsonl
+.launch_agent.py
+*.bak
+
 # Portable runtime (USB-local, never commit)
 .python/
 .venv/
