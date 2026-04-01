@@ -32,7 +32,7 @@ def run_collaboration():
 
         # Claude
         res_claude = client_anthropic.messages.create(
-            model="claude-opus-4-6",
+            model="claude-sonnet-4-6",
             max_tokens=1024,
             messages=[{"role": "user", "content": prompt}]
         )
