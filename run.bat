@@ -6,59 +6,87 @@ set "DIR=%~dp0"
 set "EMBEDDED=%DIR%.python\python.exe"
 set "VENV=%DIR%.venv\Scripts\python.exe"
 
+echo.
+echo ================================================================
+echo   AI Collaboration Tool
+echo ================================================================
+echo.
+
+:: ── Load .env if present ─────────────────────────────────────────────────────
+if exist "%DIR%.env" (
+    echo   Loading API keys from .env ...
+    for /f "usebackq tokens=1,* delims==" %%A in ("%DIR%.env") do (
+        set "line=%%A"
+        if not "!line:~0,1!"=="#" if not "%%B"=="" set "%%A=%%B"
+    )
+)
+
 :: ── Check API keys ───────────────────────────────────────────────────────────
-if "%ANTHROPIC_API_KEY%"=="" (
-    echo ERROR: ANTHROPIC_API_KEY is not set.
+set MISSING=0
+if "%ANTHROPIC_API_KEY%"=="" set MISSING=1
+if "%OPENAI_API_KEY%"==""    set MISSING=1
+if "%GEMINI_API_KEY%"==""    set MISSING=1
+
+if "%MISSING%"=="1" (
+    echo   ERROR: One or more API keys are missing.
     echo.
-    echo Set it via: Start ^> "Edit system environment variables" ^> Environment Variables
-    echo Then restart this window and try again.
+    echo   Create a .env file with your keys ^(recommended^):
+    echo     1. Copy .env.example to .env
+    echo     2. Open .env and paste your keys
+    echo.
+    echo   Or set them as Windows environment variables:
+    echo     Start ^> "Edit system environment variables" ^> Environment Variables
+    echo.
     pause & exit /b 1
 )
-if "%OPENAI_API_KEY%"=="" (
-    echo ERROR: OPENAI_API_KEY is not set.
-    echo.
-    echo Set it via: Start ^> "Edit system environment variables" ^> Environment Variables
-    echo Then restart this window and try again.
-    pause & exit /b 1
-)
-if "%GEMINI_API_KEY%"=="" (
-    echo ERROR: GEMINI_API_KEY is not set.
-    echo.
-    echo Set it via: Start ^> "Edit system environment variables" ^> Environment Variables
-    echo Then restart this window and try again.
-    pause & exit /b 1
-)
+
+echo   API keys: OK
+echo.
 
 :: ── Pick Python runtime ──────────────────────────────────────────────────────
+
+:: 1) Prefer embedded Python bundled by setup_portable.bat
 if exist "%EMBEDDED%" (
-    echo  Using portable Python (.python\)
+    echo   Using bundled Python at .python\
     set "PY=%EMBEDDED%"
-    goto :run
+    goto :install_deps
 )
 
-:: Fall back to system Python + local venv
+:: 2) Fall back to system Python + local venv
 where python >nul 2>&1
+if not errorlevel 1 (
+    if not exist "%VENV%" (
+        echo   Creating local virtual environment at .venv\ ...
+        python -m venv "%DIR%.venv"
+    )
+    set "PY=%VENV%"
+    goto :install_deps
+)
+
+:: 3) No Python at all — offer to run first-time setup
+echo   Python not found on this system.
+echo.
+echo   Run setup_portable.bat first to download a bundled Python runtime:
+echo     Double-click setup_portable.bat   ^(needs internet, ~30 MB, one-time^)
+echo.
+echo   Then run this script again.
+echo.
+pause & exit /b 1
+
+:install_deps
+:: ── Install / verify dependencies ────────────────────────────────────────────
+"%PY%" -c "import anthropic, openai, dotenv; from google import genai" >nul 2>&1
 if errorlevel 1 (
-    echo ERROR: Python not found.
-    echo.
-    echo Option A -- Run setup_portable.bat to install Python onto this drive.
-    echo Option B -- Install Python from https://python.org and re-run.
-    pause & exit /b 1
+    echo   Installing dependencies ...
+    "%PY%" -m pip install -q -r "%DIR%requirements.txt"
+    echo   Dependencies installed.
+) else (
+    echo   Dependencies: OK
 )
-
-if not exist "%VENV%" (
-    echo  Creating local virtual environment ...
-    python -m venv "%DIR%.venv"
-)
-set "PY=%VENV%"
-
-:: ── Install / verify dependencies ───────────────────────────────────────────
-echo  Checking dependencies ...
-"%PY%" -m pip show anthropic >nul 2>&1 && ^
-"%PY%" -m pip show openai    >nul 2>&1 && ^
-"%PY%" -m pip show google-genai >nul 2>&1 || ^
-"%PY%" -m pip install -q anthropic>=0.40.0 google-genai>=0.8.0 openai>=1.0.0
+echo.
 
 :run
 "%PY%" "%DIR%ai_collaboration.py"
+
+echo.
 pause

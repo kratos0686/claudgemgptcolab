@@ -59,7 +59,7 @@ del "%PYDIR%\get-pip.py"
 echo.
 echo  Installing dependencies into portable Python ...
 "%PYDIR%\python.exe" -m pip install -q --no-warn-script-location ^
-    anthropic>=0.40.0 google-genai>=0.8.0 openai>=1.0.0 pyinstaller>=6.0.0
+    anthropic>=0.40.0 google-genai>=0.8.0 openai>=1.0.0 python-dotenv>=1.0.0 pyinstaller>=6.0.0
 
 echo.
 echo ================================================================
