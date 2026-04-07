@@ -1,0 +1,49 @@
+{
+  "name": "AI Collaboration Tool",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "hostRequirements": {
+    "cpus": 4
+  },
+  "waitFor": "onCreateCommand",
+  "onCreateCommand": "pip install -r requirements.txt",
+  "updateContentCommand": "pip install -r requirements.txt",
+  "postCreateCommand": "chmod +x launch.sh && echo 'Setup complete. Add your API keys to a .env file (copy .env.example) then run: python ai_collaboration.py'",
+  "secrets": {
+    "ANTHROPIC_API_KEY": {
+      "description": "Anthropic API key for Claude. Get one at https://console.anthropic.com",
+      "documentationUrl": "https://console.anthropic.com"
+    },
+    "OPENAI_API_KEY": {
+      "description": "OpenAI API key for GPT-4o. Get one at https://platform.openai.com/api-keys",
+      "documentationUrl": "https://platform.openai.com/api-keys"
+    },
+    "GEMINI_API_KEY": {
+      "description": "Google Gemini API key. Get one at https://aistudio.google.com/app/apikey",
+      "documentationUrl": "https://aistudio.google.com/app/apikey"
+    }
+  },
+  "customizations": {
+    "codespaces": {
+      "openFiles": ["README.md", "ai_collaboration.py"]
+    },
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.pylance",
+        "ms-toolsai.jupyter",
+        "ms-python.black-formatter"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/bin/python3",
+        "editor.formatOnSave": true,
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+  "forwardPorts": [],
+  "remoteEnv": {
+    "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}",
+    "OPENAI_API_KEY": "${localEnv:OPENAI_API_KEY}",
+    "GEMINI_API_KEY": "${localEnv:GEMINI_API_KEY}"
+  }
+}
