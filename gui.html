@@ -434,6 +434,41 @@
 
 <script>
 // ═══════════════════════════════════════════════════════════
+//  SERVER CONFIG
+// ═══════════════════════════════════════════════════════════
+const SERVER_URL = 'http://127.0.0.1:5000';  // change if you run server on a different port
+let _serverMode = false;  // true once /api/status confirms server is up
+
+async function detectServer() {
+  try {
+    const r = await fetch(SERVER_URL + '/api/status', {signal: AbortSignal.timeout(2000)});
+    if (r.ok) {
+      const d = await r.json();
+      _serverMode = true;
+      const dot = document.getElementById('connDot');
+      const label = document.getElementById('connLabel');
+      dot.className = 'status-dot dot-green';
+      if (d.all_keys_set) {
+        label.textContent = 'Server connected • All keys set';
+        label.style.color = 'var(--gemini)';
+      } else {
+        const missing = Object.entries(d.keys).filter(([k,v])=>!v).map(([k])=>k);
+        label.textContent = 'Server connected • Missing keys: ' + missing.join(', ');
+        label.style.color = 'var(--user)';
+      }
+      return d;
+    }
+  } catch(e) {
+    _serverMode = false;
+    document.getElementById('connDot').className = 'status-dot dot-gray';
+    document.getElementById('connLabel').textContent = 'Simulation mode (server not running)';
+    document.getElementById('connLabel').style.color = 'var(--muted)';
+  }
+  return null;
+}
+
+
+// ═══════════════════════════════════════════════════════════
 //  STATE
 // ═══════════════════════════════════════════════════════════
 const PHASES = [
@@ -469,10 +504,10 @@ document.addEventListener('DOMContentLoaded', () => {
   buildPhaseUI();
   loadKeysFromStorage();
   loadDefaults();
-  refreshSessions();
   updatePhaseBar();
   updateStats();
   updateSidebarSession();
+  detectServer().then(() => refreshSessions());
 });
 
 function buildPhaseUI() {
@@ -695,57 +730,338 @@ function resumeSession(id) {
 async function handleSend() {
   const input = document.getElementById('userInput');
   const text = input.value.trim();
-  if (!text && !state.running) return;
+  if (!text && !state.running && !state.paused) return;
 
   if (!state.running && !state.paused) {
     // Start new session
-    const keys = ['anthropic','openai','gemini'].map(k => localStorage.getItem('aikey_'+k)||'');
-    if (keys.some(k => k.length < 8)) {
-      showToast('Please configure all 3 API keys in Setup first.','danger');
-      switchView('setup');
-      return;
+    input.value = '';
+    if (_serverMode) {
+      // Server-backed start
+      try {
+        const r = await fetch(SERVER_URL + '/api/session/start', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({project_desc: text})
+        });
+        if (!r.ok) {
+          const e = await r.json().catch(()=>({}));
+          showToast('Error: ' + (e.error||r.statusText), 'danger'); return;
+        }
+        const d = await r.json();
+        state.sessionId = d.session_id;
+        state.phaseIdx = 0;
+      } catch(e) {
+        showToast('Server unreachable: ' + e.message, 'danger'); return;
+      }
+    } else {
+      // Simulated start
+      const keys = ['anthropic','openai','gemini'].map(k => localStorage.getItem('aikey_'+k)||'');
+      if (keys.some(k => k.length < 8)) {
+        showToast('Configure API keys in Setup first.', 'danger'); switchView('setup'); return;
+      }
+      state.sessionId = newSessionId();
     }
     state.projectDesc = text;
-    state.sessionId = newSessionId();
     state.history = [];
-    state.phaseIdx = 0;
     state.turnInPhase = 0;
     state.totalTurns = 0;
     state.claudeTurns = state.gptTurns = state.geminiTurns = state.userTurns = 0;
     state.extractedFiles = {};
-    state.running = true;
-    state.paused = false;
-    input.value = '';
+    state.running = true; state.paused = false;
     appendMsgToChat('User', text);
-    state.history.push({speaker:'User',text});
+    state.history.push({speaker:'User', text});
     state.userTurns++;
-    updateStats();
-    setRunningUI(true);
-    updatePhaseUI();
-    updateSidebarSession();
-    addSystemMsg('Session started! Connecting to all three AIs…');
-    // Start the AI turn loop
+    updateStats(); setRunningUI(true); updatePhaseUI(); updateSidebarSession();
+    addSystemMsg(_serverMode ? '🚦 Session started via server! Streaming real AI responses…' : '💻 Simulation mode. Start server.py for real AI responses.');
     await runAILoop();
   } else if (state.running && text) {
-    // Inject user guidance mid-session
+    // Mid-session user guidance
     input.value = '';
     appendMsgToChat('User', text);
-    state.history.push({speaker:'User',text});
+    state.history.push({speaker:'User', text});
     state.userTurns++;
     updateStats();
+    if (_serverMode && state.sessionId) {
+      // guidance is picked up by the next /api/session/turn call automatically
+      fetch(SERVER_URL + '/api/session/turn', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({user_guidance: text})
+      }).catch(()=>{});
+    }
     saveSession();
   }
 }
 
-function handleInputKey(e) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    handleSend();
+async function nextPhase() {
+  if (state.phaseIdx >= PHASES.length - 1) return;
+  if (_serverMode && state.sessionId) {
+    try {
+      const r = await fetch(SERVER_URL + '/api/session/next_phase', {method:'POST'});
+      if (r.ok) { const d = await r.json(); state.phaseIdx = d.phase_idx; }
+    } catch(e) {}
+  } else {
+    state.phaseIdx++;
+  }
+  state.turnInPhase = 0;
+  updatePhaseUI();
+  addSystemMsg('⏭ Manually advanced to phase ' + PHASES[Math.min(state.phaseIdx,PHASES.length-1)].name);
+  saveSession();
+}
+
+async function pauseSession() {
+  state.paused = true; state.running = false;
+  if (_serverMode && state.sessionId) {
+    fetch(SERVER_URL + '/api/session/pause', {method:'POST'}).catch(()=>{});
+  }
+  setRunningUI(false);
+  addSystemMsg('⏸ Session paused. Press ▶ Start to continue.');
+  document.getElementById('sendBtn').textContent = '▶ Resume';
+  saveSession(); showToast('Session paused', 'claude');
+}
+
+async function endSession() {
+  state.running = false; state.paused = false;
+  if (_serverMode && state.sessionId) {
+    fetch(SERVER_URL + '/api/session/end', {method:'POST'}).catch(()=>{});
+  }
+  setRunningUI(false);
+  addSystemMsg('⏹ Session ended. Check Output tab for generated files.');
+  refreshOutput(); showToast('Session ended', 'gpt'); saveSession();
+}
+
+async function resumeSession(id) {
+  if (_serverMode) {
+    try {
+      const r = await fetch(SERVER_URL + '/api/sessions', {method:'GET'});
+      if (r.ok) {
+        const sessions = await r.json();
+        const s = sessions.find(x => x.session_id === id);
+        if (s) {
+          const lr = await fetch(SERVER_URL + '/api/session/load', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({session_id: id})
+          });
+          if (lr.ok) {
+            const d = await lr.json();
+            state.sessionId = d.session_id;
+            state.projectDesc = s.project_desc;
+            state.phaseIdx = d.phase_idx;
+            state.totalTurns = d.total_turns;
+            state.history = d.history || [];
+            state.extractedFiles = s.extractedFiles || {};
+            const chat = document.getElementById('chatArea');
+            chat.innerHTML = '';
+            state.history.forEach(e => appendMsgToChat(e.speaker, e.text, false));
+            state.claudeTurns = state.history.filter(h=>h.speaker==='Claude').length;
+            state.gptTurns    = state.history.filter(h=>h.speaker==='GPT-4o').length;
+            state.geminiTurns = state.history.filter(h=>h.speaker==='Gemini').length;
+            state.userTurns   = state.history.filter(h=>h.speaker==='User').length;
+            updateStats(); updatePhaseUI(); updateSidebarSession();
+            switchView('session');
+            addSystemMsg('Session resumed from server checkpoint. Phase: ' + PHASES[Math.min(state.phaseIdx,PHASES.length-1)].name);
+            setRunningUI(false);
+            document.getElementById('pauseBtn').disabled = false;
+            document.getElementById('endBtn').disabled = false;
+            showToast('Session resumed!', 'gemini');
+            return;
+          }
+        }
+      }
+    } catch(e) {}
+  }
+  // Fallback: load from localStorage
+  const s = loadSession(id);
+  if (!s) return;
+  state.sessionId = s.id;
+  state.projectDesc = s.projectDesc;
+  state.phaseIdx = s.phaseIdx;
+  state.totalTurns = s.totalTurns;
+  state.history = s.history || [];
+  state.extractedFiles = s.extractedFiles || {};
+  const chat = document.getElementById('chatArea');
+  chat.innerHTML = '';
+  state.history.forEach(entry => appendMsgToChat(entry.speaker, entry.text, false));
+  state.claudeTurns = state.history.filter(h=>h.speaker==='Claude').length;
+  state.gptTurns    = state.history.filter(h=>h.speaker==='GPT-4o').length;
+  state.geminiTurns = state.history.filter(h=>h.speaker==='Gemini').length;
+  state.userTurns   = state.history.filter(h=>h.speaker==='User').length;
+  updateStats(); updatePhaseUI(); updateSidebarSession();
+  switchView('session');
+  addSystemMsg('Session resumed from local checkpoint. Phase: ' + PHASES[Math.min(state.phaseIdx,PHASES.length-1)].name);
+  setRunningUI(false);
+  document.getElementById('pauseBtn').disabled = false;
+  document.getElementById('endBtn').disabled = false;
+  showToast('Session resumed!', 'gemini');
+}
+
+async function refreshSessions() {
+  if (_serverMode) {
+    try {
+      const r = await fetch(SERVER_URL + '/api/sessions');
+      if (r.ok) {
+        const serverSessions = await r.json();
+        const container = document.getElementById('sessionsList');
+        if (!serverSessions.length) {
+          container.innerHTML = '<div class="text-muted" style="text-align:center;padding:40px">No saved sessions yet.</div>';
+          return;
+        }
+        container.innerHTML = serverSessions.map(s => {
+          const phase = PHASES[Math.min(s.phase_idx||0, PHASES.length-1)].name;
+          const date = (s.saved_at||'').substring(0,16).replace('T',' ');
+          const desc = (s.project_desc||'').substring(0,70) + ((s.project_desc||'').length>70?'…':'');
+          return '<div class="session-card" onclick="resumeSession(\'' + s.session_id + '\')">' +
+            '<div style="font-size:13px;font-weight:600">' + escHtml(desc||'Untitled') + '</div>' +
+            '<div class="session-meta">' +
+            '<span>📅 ' + date + '</span>' +
+            '<span>📌 Phase: ' + phase + '</span>' +
+            '<span>🔄 ' + (s.total_turns||0) + ' turns</span>' +
+            '<span style="margin-left:auto;cursor:pointer;color:var(--danger)" onclick="event.stopPropagation();deleteSession(\'' + s.session_id + '\')">🗑</span>' +
+            '</div></div>';
+        }).join('');
+        return;
+      }
+    } catch(e) {}
+  }
+  // Fallback: localStorage
+  const sessions = JSON.parse(localStorage.getItem('sessions')||'{}');
+  const container = document.getElementById('sessionsList');
+  const items = Object.values(sessions).sort((a,b) => b.savedAt.localeCompare(a.savedAt));
+  if (!items.length) { container.innerHTML = '<div class="text-muted" style="text-align:center;padding:40px">No saved sessions yet.</div>'; return; }
+  container.innerHTML = items.map(s => {
+    const phase = PHASES[Math.min(s.phaseIdx||0, PHASES.length-1)].name;
+    const date = (s.savedAt||'').substring(0,16).replace('T',' ');
+    const desc = (s.projectDesc||'').substring(0,70);
+    return '<div class="session-card" onclick="resumeSession(\'' + s.id + '\')">' +
+      '<div style="font-size:13px;font-weight:600">' + escHtml(desc||'Untitled') + '</div>' +
+      '<div class="session-meta">' +
+      '<span>📅 ' + date + '</span>' +
+      '<span>📌 Phase: ' + phase + '</span>' +
+      '<span>🔄 ' + (s.totalTurns||0) + ' turns</span>' +
+      '<span style="margin-left:auto;cursor:pointer;color:var(--danger)" onclick="event.stopPropagation();deleteSession(\'' + s.id + '\')">🗑</span>' +
+      '</div></div>';
+  }).join('');
+}
+
+async function deleteSession(id) {
+  if (_serverMode) {
+    try { await fetch(SERVER_URL + '/api/sessions/' + id, {method:'DELETE'}); } catch(e) {}
+  }
+  const sessions = JSON.parse(localStorage.getItem('sessions')||'{}');
+  delete sessions[id];
+  localStorage.setItem('sessions', JSON.stringify(sessions));
+  refreshSessions();
+}
+
+async function runAILoop() {
+  if (_serverMode) {
+    await runAILoopServer();
+  } else {
+    await runAILoopSimulated();
   }
 }
 
-// Simulated AI response (the real tool runs Python; this GUI shows the flow)
-async function runAILoop() {
+// ── REAL SERVER MODE ──
+async function runAILoopServer() {
+  while (state.running && !state.paused && state.phaseIdx < PHASES.length) {
+    const guidance = '';  // consumed once per turn via handleSend
+    setStatus('Calling AI round-robin... (phase ' + (state.phaseIdx+1) + '/6: ' + PHASES[state.phaseIdx].name + ')');
+    let currentAI = null;
+    let currentText = '';
+    let turnDone = false;
+    let phaseAdvanced = false;
+    let allDone = false;
+    try {
+      const resp = await fetch(SERVER_URL + '/api/session/turn', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({user_guidance: ''}),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(()=>({}));
+        addSystemMsg('Server error: ' + (err.error || resp.statusText));
+        setRunningUI(false);
+        state.running = false;
+        return;
+      }
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, {stream: true});
+        const parts = buf.split('\n\n');
+        buf = parts.pop();
+        for (const part of parts) {
+          if (!part.trim()) continue;
+          const evMatch = part.match(/^event: (\S+)/m);
+          const dataMatch = part.match(/^data: (.+)$/m);
+          if (!evMatch || !dataMatch) continue;
+          const ev = evMatch[1];
+          let data;
+          try { data = JSON.parse(dataMatch[1]); } catch(e) { continue; }
+          if (ev === 'token') {
+            if (data.ai !== currentAI) {
+              if (currentAI) hideTyping();
+              currentAI = data.ai;
+              currentText = '';
+              showTyping(currentAI);
+            }
+            currentText += data.token;
+            // Update the typing bubble with streamed text
+            const tb = document.querySelector('.typing');
+            if (tb && tb.parentElement) {
+              const bubble = tb.parentElement.querySelector('.msg-bubble') || tb;
+              if (bubble !== tb) bubble.textContent = currentText;
+            }
+          } else if (ev === 'turn_done') {
+            hideTyping();
+            if (data.full_text) {
+              appendMsgToChat(data.ai, data.full_text);
+              state.history.push({speaker: data.ai, text: data.full_text});
+              if (data.ai==='Claude') state.claudeTurns++;
+              else if (data.ai==='GPT-4o') state.gptTurns++;
+              else state.geminiTurns++;
+              state.totalTurns = data.turn;
+              extractFilesFromResponse(data.full_text);
+              updateStats();
+              updateSidebarSession();
+            }
+          } else if (ev === 'phase_done') {
+            state.phaseIdx = data.phase_idx;
+            phaseAdvanced = true;
+            addSystemMsg('✅ Phase ' + data.phase + ' complete! Moving to: ' + (data.next_phase || 'final'));
+            updatePhaseUI();
+          } else if (ev === 'round_done') {
+            state.phaseIdx = data.phase_idx;
+            turnDone = true;
+          } else if (ev === 'done') {
+            allDone = true;
+            state.totalTurns = data.total_turns || state.totalTurns;
+            addSystemMsg('🎉 Project complete! Check Output tab for generated files.');
+            state.running = false;
+            setRunningUI(false);
+            refreshOutput();
+            showToast('Project complete!', 'gemini');
+          } else if (ev === 'error') {
+            addSystemMsg('⚠ Error: ' + data.message);
+          }
+        }
+        if (allDone) break;
+      }
+    } catch(e) {
+      addSystemMsg('⚠ Network error: ' + e.message);
+      state.running = false;
+      setRunningUI(false);
+      return;
+    }
+    if (allDone || !state.running || state.paused) break;
+    updateStats();
+  }
+  if (state.running && !state.paused) { setRunningUI(false); state.running = false; }
+}
+
+// ── SIMULATED MODE (fallback when server not running) ──
+async function runAILoopSimulated() {
   while (state.running && !state.paused && state.phaseIdx < PHASES.length) {
     const phase = PHASES[state.phaseIdx];
     for (const aiName of AI_ORDER) {
@@ -754,7 +1070,7 @@ async function runAILoop() {
       state.totalTurns++;
       state.turnInPhase++;
       updateSidebarSession();
-      setStatus(`${aiName} is responding… (phase ${state.phaseIdx+1}/6: ${phase.name})`);
+      setStatus(aiName + ' responding… (phase ' + (state.phaseIdx+1) + '/6: ' + phase.name + ')');
       showTyping(aiName);
       const response = await simulateAIResponse(aiName, phase);
       hideTyping();
@@ -766,66 +1082,35 @@ async function runAILoop() {
       updateStats();
       extractFilesFromResponse(response);
       saveSession();
-      // Check for phase signal
       if (response.includes('PHASE_COMPLETE')) {
-        addSystemMsg(`✅ ${aiName} marked phase ${phase.name} complete!`);
+        addSystemMsg('✅ ' + aiName + ' marked phase ' + phase.name + ' complete!');
         state.phaseIdx++;
         state.turnInPhase = 0;
         updatePhaseUI();
         if (state.phaseIdx >= PHASES.length) {
-          addSystemMsg('🎉 All phases complete! Project done. Check Output tab for generated files.');
-          setRunningUI(false);
-          state.running = false;
-          refreshOutput();
-          showToast('Project complete!','gemini');
+          addSystemMsg('🎉 All phases complete!');
+          setRunningUI(false); state.running = false;
+          refreshOutput(); showToast('Project complete!', 'gemini');
           return;
         }
         break;
       }
       if (response.includes('PROJECT_COMPLETE')) {
         addSystemMsg('🎉 Project fully complete!');
-        setRunningUI(false);
-        state.running = false;
-        refreshOutput();
-        showToast('Project complete!','gemini');
+        setRunningUI(false); state.running = false;
+        refreshOutput(); showToast('Project complete!', 'gemini');
         return;
       }
       await sleep(400);
     }
     if (state.turnInPhase >= 20) {
-      addSystemMsg(`⏭ Turn limit reached for ${phase.name}. Advancing…`);
-      state.phaseIdx++;
-      state.turnInPhase = 0;
-      updatePhaseUI();
+      addSystemMsg('⏭ Turn limit for ' + phase.name + '. Advancing…');
+      state.phaseIdx++; state.turnInPhase = 0; updatePhaseUI();
     }
   }
   if (!state.paused) setRunningUI(false);
 }
 
-async function simulateAIResponse(aiName, phase) {
-  const delay = 800 + Math.random()*600;
-  await sleep(delay);
-  const reviews = ['✅ Review: Previous output looks solid. No syntax errors detected.', '✅ Review: Logic checks out. Proceeding with my contribution.', '⚠ Review: Minor issue in previous output — variable shadowing on line ~12. Here\'s the fix: `result = process(data)`'];
-  const review = reviews[Math.floor(Math.random()*reviews.length)];
-  const handoffs = {
-    'Claude':'GPT-4o, please review my work and continue.',
-    'GPT-4o':'Gemini, please review and continue.',
-    'Gemini':'Claude, please review and take the next turn.',
-  };
-  const contributions = {
-    PLAN:   { Claude: `## Requirements Analysis\n\nBased on the project description, here are the key requirements:\n\n**Functional:**\n- Core feature set as described\n- User-facing CLI interface\n- Configurable via environment variables\n\n**Non-functional:**\n- Must run on Python 3.9+\n- Sub-2s response time\n- Graceful error handling`, GPT4o:'', Gemini:'' },
-    DESIGN: { Claude:`## Architecture\n\n\`\`\`\nproject/\n├── main.py        # Entry point\n├── core/\n│   ├── engine.py  # Business logic\n│   └── models.py  # Data models\n├── utils/\n│   └── helpers.py\n└── tests/\n    └── test_core.py\n\`\`\`\n\n**Tech stack:** Python 3.11, dataclasses, argparse, pytest`, GPT4o:'', Gemini:'' },
-    BUILD:  { Gemini:`## Implementation\n\n\`\`\`python:main.py\n#!/usr/bin/env python3\n"""Main entry point."""\nimport argparse\nfrom core.engine import Engine\n\ndef main():\n    parser = argparse.ArgumentParser(description=\"AI-generated tool\")\n    parser.add_argument(\"--input\", required=True)\n    args = parser.parse_args()\n    engine = Engine()\n    result = engine.run(args.input)\n    print(result)\n\nif __name__ == \"__main__\":\n    main()\n\`\`\`` },
-    TEST:   { 'GPT-4o':`## Test Suite\n\n\`\`\`python:tests/test_core.py\nimport pytest\nfrom core.engine import Engine\n\ndef test_engine_runs():\n    e = Engine()\n    assert e is not None\n\ndef test_engine_processes_input():\n    e = Engine()\n    result = e.run(\"sample input\")\n    assert result is not None\n    assert isinstance(result, str)\n\ndef test_edge_case_empty_input():\n    e = Engine()\n    with pytest.raises(ValueError):\n        e.run(\"\")\n\`\`\`` },
-    DOCS:   { 'GPT-4o':`## README.md\n\n\`\`\`markdown:README.md\n# Project\n\nAI-generated project.\n\n## Installation\n\`\`\`bash\npip install -r requirements.txt\n\`\`\`\n\n## Usage\n\`\`\`bash\npython main.py --input \"your data\"\n\`\`\`\n\n## License\nMIT\n\`\`\`` },
-    SHIP:   { Gemini:`## Dockerfile\n\n\`\`\`dockerfile:Dockerfile\nFROM python:3.11-slim\nWORKDIR /app\nCOPY requirements.txt .\nRUN pip install -r requirements.txt\nCOPY . .\nCMD [\"python\", \"main.py\"]\n\`\`\`\n\n**PHASE_COMPLETE**` },
-  };
-  const phaseMap = {PLAN:'PLAN',DESIGN:'DESIGN',BUILD:'BUILD',TEST:'TEST',DOCS:'DOCS',SHIP:'SHIP'};
-  const pKey = phaseMap[phase.name] || 'PLAN';
-  const aiKey = aiName === 'GPT-4o' ? 'GPT-4o' : aiName;
-  const contrib = contributions[pKey]?.[aiKey] || contributions[pKey]?.[aiName] || `Contributing to ${phase.name} phase. [Simulated response — connect the Python backend to get real AI output.]`;
-  return `${review}\n\n${contrib}\n\n${handoffs[aiName]}`;
-}
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
