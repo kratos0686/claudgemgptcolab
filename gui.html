@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Collaboration Tool — GUI</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --surface2: #21262d; --surface3: #30363d;
+    --border: #30363d; --border2: #484f58;
+    --claude: #60a5fa; --gpt: #c084fc; --gemini: #34d399; --user: #fbbf24;
+    --text: #e6edf3; --muted: #8b949e; --danger: #f85149;
+    --radius: 10px; --gap: 14px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ── TOP BAR ── */
+  .topbar { display:flex; align-items:center; gap:12px; padding:0 20px; height:52px;
+            background:var(--surface); border-bottom:1px solid var(--border); flex-shrink:0; }
+  .logo { display:flex; align-items:center; gap:10px; font-weight:700; font-size:15px; }
+  .logo-icon { width:32px; height:32px; border-radius:8px;
+               background:linear-gradient(135deg,#60a5fa,#c084fc,#34d399);
+               display:flex; align-items:center; justify-content:center; font-size:15px; }
+  .topbar-spacer { flex:1; }
+  .badge { font-size:11px; padding:3px 8px; border-radius:20px; font-weight:600; }
+  .badge-claude { background:#1e3a5f; color:var(--claude); }
+  .badge-gpt    { background:#3b1f5e; color:var(--gpt); }
+  .badge-gemini { background:#0f3d2a; color:var(--gemini); }
+  .status-dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:5px; }
+  .dot-green { background:#34d399; box-shadow:0 0 6px #34d399; animation:pulse 2s infinite; }
+  .dot-gray  { background:var(--border2); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* ── LAYOUT ── */
+  .main { display:flex; flex:1; overflow:hidden; }
+  .sidebar { width:220px; background:var(--surface); border-right:1px solid var(--border);
+             display:flex; flex-direction:column; flex-shrink:0; overflow:hidden; }
+  .content { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+
+  /* ── SIDEBAR ── */
+  .sidebar-section { padding:12px 8px 4px; font-size:10px; font-weight:700;
+                     color:var(--muted); letter-spacing:.08em; text-transform:uppercase; }
+  .nav-item { display:flex; align-items:center; gap:9px; padding:8px 12px; border-radius:6px;
+              cursor:pointer; font-size:13px; color:var(--muted); margin:1px 4px;
+              transition:background .15s,color .15s; user-select:none; }
+  .nav-item:hover { background:var(--surface2); color:var(--text); }
+  .nav-item.active { background:rgba(96,165,250,.12); color:var(--claude); }
+  .nav-icon { font-size:15px; width:20px; text-align:center; }
+
+  .phase-list { padding:8px; }
+  .phase-item { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:6px;
+                font-size:12px; cursor:pointer; margin-bottom:2px;
+                border:1px solid transparent; transition:all .15s; }
+  .phase-item:hover { background:var(--surface2); }
+  .phase-item.active { background:rgba(96,165,250,.12); border-color:rgba(96,165,250,.3); }
+  .phase-item.done { opacity:.5; }
+  .phase-num { width:20px; height:20px; border-radius:50%; display:flex;
+               align-items:center; justify-content:center; font-size:10px; font-weight:700;
+               background:var(--surface3); color:var(--muted); flex-shrink:0; }
+  .phase-item.active .phase-num { background:var(--claude); color:#0d1117; }
+  .phase-item.done .phase-num { background:var(--gemini); color:#0d1117; }
+  .phase-name { font-weight:600; }
+  .phase-lead { font-size:10px; color:var(--muted); margin-left:auto; }
+
+  /* ── TABS ── */
+  .tabs { display:flex; border-bottom:1px solid var(--border); background:var(--surface); padding:0 16px; flex-shrink:0; }
+  .tab { padding:10px 16px; font-size:13px; cursor:pointer; color:var(--muted); border-bottom:2px solid transparent;
+         transition:all .15s; user-select:none; }
+  .tab:hover { color:var(--text); }
+  .tab.active { color:var(--text); border-bottom-color:var(--claude); }
+
+  /* ── SESSION PANEL ── */
+  .session-panel { display:flex; flex-direction:column; flex:1; overflow:hidden; }
+  .chat-area { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:12px; }
+  .chat-area::-webkit-scrollbar { width:6px; }
+  .chat-area::-webkit-scrollbar-track { background:transparent; }
+  .chat-area::-webkit-scrollbar-thumb { background:var(--surface3); border-radius:3px; }
+
+  .msg { display:flex; flex-direction:column; gap:4px; max-width:92%; }
+  .msg.user { align-self:flex-end; }
+  .msg-header { display:flex; align-items:center; gap:7px; font-size:11px; font-weight:600; }
+  .msg-bubble { padding:10px 14px; border-radius:10px; font-size:13px; line-height:1.6;
+                white-space:pre-wrap; word-break:break-word; }
+  .msg.claude .msg-header { color:var(--claude); }
+  .msg.claude .msg-bubble { background:rgba(96,165,250,.08); border:1px solid rgba(96,165,250,.2); }
+  .msg.gpt .msg-header { color:var(--gpt); }
+  .msg.gpt .msg-bubble { background:rgba(192,132,252,.08); border:1px solid rgba(192,132,252,.2); }
+  .msg.gemini .msg-header { color:var(--gemini); }
+  .msg.gemini .msg-bubble { background:rgba(52,211,153,.08); border:1px solid rgba(52,211,153,.2); }
+  .msg.user .msg-header { color:var(--user); justify-content:flex-end; }
+  .msg.user .msg-bubble { background:rgba(251,191,36,.08); border:1px solid rgba(251,191,36,.2); }
+  .msg.system .msg-bubble { background:var(--surface2); border:1px solid var(--border); color:var(--muted); font-size:12px; font-style:italic; }
+
+  .typing { display:flex; align-items:center; gap:4px; padding:10px 14px; background:var(--surface2);
+            border:1px solid var(--border); border-radius:10px; width:fit-content; }
+  .typing span { width:6px; height:6px; background:var(--muted); border-radius:50%;
+                 animation:bounce .8s ease-in-out infinite; }
+  .typing span:nth-child(2) { animation-delay:.15s; }
+  .typing span:nth-child(3) { animation-delay:.3s; }
+  @keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-5px)} }
+
+  /* ── INPUT AREA ── */
+  .input-area { border-top:1px solid var(--border); padding:12px 16px; background:var(--surface); flex-shrink:0; }
+  .input-row { display:flex; gap:8px; align-items:flex-end; }
+  .input-box { flex:1; background:var(--surface2); border:1px solid var(--border2);
+               border-radius:8px; padding:9px 12px; color:var(--text); font-size:13px;
+               resize:none; font-family:inherit; line-height:1.5; min-height:40px; max-height:120px;
+               outline:none; transition:border-color .15s; }
+  .input-box:focus { border-color:var(--claude); }
+  .input-box::placeholder { color:var(--muted); }
+  .btn { padding:9px 16px; border-radius:8px; border:none; cursor:pointer; font-size:13px;
+         font-weight:600; transition:all .15s; white-space:nowrap; }
+  .btn-primary { background:var(--claude); color:#0d1117; }
+  .btn-primary:hover { background:#93c5fd; }
+  .btn-primary:disabled { background:var(--surface3); color:var(--muted); cursor:not-allowed; }
+  .btn-secondary { background:var(--surface2); color:var(--text); border:1px solid var(--border2); }
+  .btn-secondary:hover { background:var(--surface3); }
+  .btn-danger { background:rgba(248,81,73,.15); color:var(--danger); border:1px solid rgba(248,81,73,.3); }
+  .btn-danger:hover { background:rgba(248,81,73,.25); }
+  .input-actions { display:flex; gap:6px; margin-top:8px; }
+
+  /* ── SETUP PANEL ── */
+  .setup-panel { flex:1; overflow-y:auto; padding:24px; display:flex; flex-direction:column; gap:20px; }
+  .card { background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius); padding:18px; }
+  .card-title { font-size:14px; font-weight:700; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+  .form-group { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
+  .form-label { font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+  .form-input { background:var(--surface); border:1px solid var(--border2); border-radius:6px;
+                padding:8px 10px; color:var(--text); font-size:13px; outline:none; transition:border-color .15s; }
+  .form-input:focus { border-color:var(--claude); }
+  .form-input::placeholder { color:var(--muted); }
+  .form-textarea { resize:vertical; min-height:90px; font-family:inherit; line-height:1.5; }
+  .key-row { display:flex; gap:8px; align-items:center; }
+  .key-status { font-size:11px; font-weight:600; padding:2px 8px; border-radius:20px; }
+  .key-set { background:#0f3d2a; color:var(--gemini); }
+  .key-missing { background:#3d0f0f; color:var(--danger); }
+  .key-input-wrap { flex:1; position:relative; }
+  .key-toggle { position:absolute; right:8px; top:50%; transform:translateY(-50%);
+                background:none; border:none; color:var(--muted); cursor:pointer; font-size:12px; }
+
+  /* ── OUTPUT PANEL ── */
+  .output-panel { flex:1; overflow:hidden; display:flex; flex-direction:column; }
+  .file-tree { padding:12px; overflow-y:auto; flex:1; }
+  .file-item { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:6px;
+               cursor:pointer; font-size:13px; transition:background .15s; }
+  .file-item:hover { background:var(--surface2); }
+  .file-icon { font-size:14px; }
+  .file-name { flex:1; font-family:'SF Mono',monospace; font-size:12px; }
+  .file-size { font-size:11px; color:var(--muted); }
+  .code-preview { flex:1; background:var(--surface2); border-top:1px solid var(--border);
+                  overflow:hidden; display:flex; flex-direction:column; }
+  .code-header { padding:8px 14px; border-bottom:1px solid var(--border); font-size:12px;
+                 font-family:monospace; color:var(--muted); display:flex; align-items:center; gap:8px; }
+  .code-body { flex:1; overflow:auto; padding:14px; }
+  .code-body pre { font-family:'SF Mono','Fira Code',monospace; font-size:12px;
+                   line-height:1.6; color:var(--text); white-space:pre-wrap; }
+
+  /* ── STATS ROW ── */
+  .stats-row { display:flex; gap:10px; padding:14px 16px; border-bottom:1px solid var(--border); flex-shrink:0; }
+  .stat-card { flex:1; background:var(--surface2); border:1px solid var(--border);
+               border-radius:8px; padding:10px 14px; }
+  .stat-label { font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+  .stat-value { font-size:22px; font-weight:700; margin-top:2px; }
+  .stat-claude { color:var(--claude); }
+  .stat-gpt    { color:var(--gpt); }
+  .stat-gemini { color:var(--gemini); }
+  .stat-user   { color:var(--user); }
+
+  /* ── PHASE PROGRESS BAR ── */
+  .phase-bar { display:flex; padding:10px 16px; gap:4px; border-bottom:1px solid var(--border); flex-shrink:0; }
+  .phase-seg { flex:1; height:4px; border-radius:2px; background:var(--surface3); transition:background .3s; }
+  .phase-seg.done { background:var(--gemini); }
+  .phase-seg.active { background:var(--claude); animation:glow 1.5s ease-in-out infinite; }
+  @keyframes glow { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+  /* ── SESSIONS LIST ── */
+  .sessions-panel { flex:1; overflow-y:auto; padding:16px; }
+  .session-card { background:var(--surface2); border:1px solid var(--border); border-radius:8px;
+                  padding:14px; margin-bottom:10px; cursor:pointer; transition:border-color .15s; }
+  .session-card:hover { border-color:var(--border2); }
+  .session-card.selected { border-color:var(--claude); background:rgba(96,165,250,.05); }
+  .session-meta { display:flex; gap:12px; font-size:11px; color:var(--muted); margin-top:6px; }
+
+  /* ── RESPONSIVE HELPERS ── */
+  .flex-row { display:flex; align-items:center; gap:8px; }
+  .flex-1 { flex:1; }
+  .mt-8 { margin-top:8px; }
+  .mt-4 { margin-top:4px; }
+  .text-muted { color:var(--muted); font-size:12px; }
+  .hidden { display:none !important; }
+
+  /* ── MODAL ── */
+  .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:100;
+                   display:flex; align-items:center; justify-content:center; }
+  .modal { background:var(--surface); border:1px solid var(--border); border-radius:12px;
+           padding:24px; width:480px; max-width:90vw; }
+  .modal-title { font-size:16px; font-weight:700; margin-bottom:16px; }
+  .modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:20px; }
+</style>
+</head>
+<body>
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-icon">🤖</div>
+    <span>AI Collab</span>
+  </div>
+  <div class="flex-row" style="gap:6px;margin-left:8px">
+    <span class="badge badge-claude">Claude</span>
+    <span class="badge badge-gpt">GPT-4o</span>
+    <span class="badge badge-gemini">Gemini</span>
+  </div>
+  <div class="topbar-spacer"></div>
+  <div class="flex-row" id="topStatus">
+    <span class="status-dot dot-gray" id="connDot"></span>
+    <span id="connLabel" style="font-size:12px;color:var(--muted)">Not connected</span>
+  </div>
+  <button class="btn btn-secondary" style="padding:6px 12px;font-size:12px" onclick="showModal('settings')">⚙ Settings</button>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <!-- SIDEBAR -->
+  <nav class="sidebar">
+    <div class="sidebar-section">Navigation</div>
+    <div class="nav-item active" id="nav-session" onclick="switchView('session')">
+      <span class="nav-icon">💬</span> Session
+    </div>
+    <div class="nav-item" id="nav-setup" onclick="switchView('setup')">
+      <span class="nav-icon">🔑</span> Setup
+    </div>
+    <div class="nav-item" id="nav-sessions" onclick="switchView('sessions')">
+      <span class="nav-icon">📂</span> Sessions
+    </div>
+    <div class="nav-item" id="nav-output" onclick="switchView('output')">
+      <span class="nav-icon">📦</span> Output
+    </div>
+
+    <div class="sidebar-section" style="margin-top:8px">Phases</div>
+    <div class="phase-list" id="phaseList"></div>
+
+    <div style="padding:12px 8px;margin-top:auto;border-top:1px solid var(--border)">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px;">Current session</div>
+      <div style="font-size:12px;font-weight:600" id="sideSessionId">—</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:3px" id="sideTurns">0 turns</div>
+    </div>
+  </nav>
+
+  <!-- CONTENT AREA -->
+  <div class="content">
+
+    <!-- ═══════════════ SESSION VIEW ═══════════════ -->
+    <div id="view-session" style="display:flex;flex-direction:column;flex:1;overflow:hidden">
+      <!-- Phase progress bar -->
+      <div class="phase-bar" id="phaseBar"></div>
+      <!-- Stats -->
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-label">Claude turns</div><div class="stat-value stat-claude" id="statClaude">0</div></div>
+        <div class="stat-card"><div class="stat-label">GPT-4o turns</div><div class="stat-value stat-gpt" id="statGpt">0</div></div>
+        <div class="stat-card"><div class="stat-label">Gemini turns</div><div class="stat-value stat-gemini" id="statGemini">0</div></div>
+        <div class="stat-card"><div class="stat-label">Your messages</div><div class="stat-value stat-user" id="statUser">0</div></div>
+        <div class="stat-card"><div class="stat-label">Total turns</div><div class="stat-value" id="statTotal">0</div></div>
+      </div>
+      <!-- Chat -->
+      <div class="chat-area" id="chatArea">
+        <div class="msg system"><div class="msg-bubble">👋 Welcome to the AI Collaboration Tool GUI. Configure your API keys in Setup, then start a new session below.</div></div>
+      </div>
+      <!-- Input -->
+      <div class="input-area">
+        <div class="input-row">
+          <textarea class="input-box" id="userInput" rows="1" placeholder="Describe your project… or send guidance during a session" onkeydown="handleInputKey(event)"></textarea>
+          <button class="btn btn-primary" id="sendBtn" onclick="handleSend()">▶ Start</button>
+        </div>
+        <div class="input-actions">
+          <button class="btn btn-secondary" onclick="nextPhase()" id="nextPhaseBtn" title="Manually advance to next phase" style="font-size:12px;padding:6px 10px">⏭ Next Phase</button>
+          <button class="btn btn-secondary" onclick="pauseSession()" id="pauseBtn" style="font-size:12px;padding:6px 10px" disabled>⏸ Pause</button>
+          <button class="btn btn-danger" onclick="endSession()" id="endBtn" style="font-size:12px;padding:6px 10px" disabled>⏹ End</button>
+          <span class="flex-1"></span>
+          <span class="text-muted" id="statusText">Ready</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════ SETUP VIEW ═══════════════ -->
+    <div id="view-setup" class="hidden" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+      <div class="setup-panel">
+        <div class="card">
+          <div class="card-title">🔑 API Keys</div>
+          <p class="text-muted" style="margin-bottom:14px">Keys are stored only in your browser's localStorage and never sent anywhere except the respective AI APIs.</p>
+
+          <div class="form-group">
+            <div class="form-label">Anthropic API Key (Claude)</div>
+            <div class="key-row">
+              <div class="key-input-wrap">
+                <input type="password" class="form-input" id="keyAnthropic" placeholder="sk-ant-..." style="width:100%;padding-right:50px" oninput="markKeyDirty()">
+                <button class="key-toggle" onclick="toggleKey('keyAnthropic')">Show</button>
+              </div>
+              <span class="key-status" id="statusAnthropic">—</span>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <div class="form-label">OpenAI API Key (GPT-4o)</div>
+            <div class="key-row">
+              <div class="key-input-wrap">
+                <input type="password" class="form-input" id="keyOpenAI" placeholder="sk-..." style="width:100%;padding-right:50px" oninput="markKeyDirty()">
+                <button class="key-toggle" onclick="toggleKey('keyOpenAI')">Show</button>
+              </div>
+              <span class="key-status" id="statusOpenAI">—</span>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <div class="form-label">Google Gemini API Key</div>
+            <div class="key-row">
+              <div class="key-input-wrap">
+                <input type="password" class="form-input" id="keyGemini" placeholder="AIza..." style="width:100%;padding-right:50px" oninput="markKeyDirty()">
+                <button class="key-toggle" onclick="toggleKey('keyGemini')">Show</button>
+              </div>
+              <span class="key-status" id="statusGemini">—</span>
+            </div>
+          </div>
+
+          <button class="btn btn-primary" onclick="saveKeys()" id="saveKeysBtn" style="margin-top:4px">💾 Save Keys</button>
+        </div>
+
+        <div class="card">
+          <div class="card-title">⚙ Session Defaults</div>
+          <div class="form-group">
+            <div class="form-label">Default Project Description</div>
+            <textarea class="form-input form-textarea" id="defaultProject" placeholder="A Python CLI tool that…"></textarea>
+          </div>
+          <div class="form-group">
+            <div class="form-label">Max turns per phase</div>
+            <input type="number" class="form-input" id="maxTurns" value="20" min="1" max="50" style="width:100px">
+          </div>
+          <div class="form-group">
+            <div class="form-label">History context window</div>
+            <input type="number" class="form-input" id="maxHistory" value="30" min="5" max="100" style="width:100px">
+          </div>
+          <button class="btn btn-secondary" onclick="saveDefaults()" style="margin-top:4px">Save Defaults</button>
+        </div>
+
+        <div class="card">
+          <div class="card-title">🤖 AI Model Info</div>
+          <table style="width:100%;font-size:13px;border-collapse:collapse">
+            <thead><tr style="color:var(--muted);font-size:11px;text-transform:uppercase">
+              <th style="text-align:left;padding:6px 8px">AI</th>
+              <th style="text-align:left;padding:6px 8px">Model</th>
+              <th style="text-align:left;padding:6px 8px">Leads</th>
+              <th style="text-align:left;padding:6px 8px">Reviews</th>
+            </tr></thead>
+            <tbody>
+              <tr><td style="padding:7px 8px"><span style="color:var(--claude)">Claude</span></td><td style="padding:7px 8px;font-family:monospace;font-size:12px">claude-opus-4-6</td><td style="padding:7px 8px">PLAN, DESIGN</td><td style="padding:7px 8px">GPT-4o each turn</td></tr>
+              <tr><td style="padding:7px 8px"><span style="color:var(--gpt)">GPT-4o</span></td><td style="padding:7px 8px;font-family:monospace;font-size:12px">gpt-4o</td><td style="padding:7px 8px">TEST, DOCS</td><td style="padding:7px 8px">Gemini each turn</td></tr>
+              <tr><td style="padding:7px 8px"><span style="color:var(--gemini)">Gemini</span></td><td style="padding:7px 8px;font-family:monospace;font-size:12px">gemini-2.0-flash</td><td style="padding:7px 8px">BUILD, SHIP</td><td style="padding:7px 8px">Claude each turn</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════ SESSIONS VIEW ═══════════════ -->
+    <div id="view-sessions" class="hidden" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-shrink:0">
+        <span style="font-size:14px;font-weight:700">Saved Sessions</span>
+        <span class="flex-1"></span>
+        <button class="btn btn-secondary" onclick="refreshSessions()" style="font-size:12px;padding:6px 10px">↻ Refresh</button>
+        <button class="btn btn-danger" onclick="clearAllSessions()" style="font-size:12px;padding:6px 10px">🗑 Clear All</button>
+      </div>
+      <div class="sessions-panel" id="sessionsList">
+        <div class="text-muted" style="text-align:center;padding:40px">No saved sessions yet.</div>
+      </div>
+    </div>
+
+    <!-- ═══════════════ OUTPUT VIEW ═══════════════ -->
+    <div id="view-output" class="hidden" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-shrink:0">
+        <span style="font-size:14px;font-weight:700">📦 Generated Output</span>
+        <span class="flex-1"></span>
+        <button class="btn btn-secondary" onclick="refreshOutput()" style="font-size:12px;padding:6px 10px">↻ Refresh</button>
+        <button class="btn btn-primary" onclick="downloadTranscript()" style="font-size:12px;padding:6px 10px" id="dlTranscript" disabled>⬇ Transcript</button>
+        <button class="btn btn-primary" onclick="downloadCode()" style="font-size:12px;padding:6px 10px" id="dlCode" disabled>⬇ Code Files</button>
+      </div>
+      <div style="display:flex;flex:1;overflow:hidden">
+        <div style="width:220px;border-right:1px solid var(--border);overflow-y:auto;padding:8px" id="fileTree">
+          <div class="text-muted" style="text-align:center;padding:30px 10px;font-size:12px">No files yet. Complete a session to generate output.</div>
+        </div>
+        <div class="code-preview">
+          <div class="code-header" id="codeFilename">Select a file to preview</div>
+          <div class="code-body"><pre id="codeContent" style="color:var(--muted)">// File content will appear here</pre></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end .content -->
+</div><!-- end .main -->
+
+<!-- ═══════════ SETTINGS MODAL ═══════════ -->
+<div class="modal-overlay hidden" id="settingsModal">
+  <div class="modal">
+    <div class="modal-title">⚙ Settings</div>
+    <div class="form-group">
+      <div class="form-label">Theme</div>
+      <select class="form-input" id="themeSelect" onchange="applyTheme(this.value)">
+        <option value="dark">Dark (default)</option>
+        <option value="darker">Darker</option>
+        <option value="dim">Dim</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <div class="form-label">Font size</div>
+      <select class="form-input" id="fontSizeSelect" onchange="applyFontSize(this.value)">
+        <option value="13">13px (default)</option>
+        <option value="12">12px (small)</option>
+        <option value="14">14px (large)</option>
+        <option value="15">15px (larger)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <div class="form-label">Auto-scroll chat</div>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="autoScrollCheck" checked style="width:16px;height:16px">
+        <span style="font-size:13px">Automatically scroll to new messages</span>
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="hideModal('settings')">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════
+const PHASES = [
+  { name:'PLAN',   goal:'Requirements, user stories, constraints, task list',      lead:'Claude' },
+  { name:'DESIGN', goal:'Architecture, data models, folder structure, API contracts', lead:'Claude' },
+  { name:'BUILD',  goal:'Write all production-quality implementation code',          lead:'Gemini' },
+  { name:'TEST',   goal:'Unit tests, integration tests, edge cases',                 lead:'GPT-4o' },
+  { name:'DOCS',   goal:'README, inline docstrings, usage examples, API reference',  lead:'GPT-4o' },
+  { name:'SHIP',   goal:'Dockerfile, CI/CD config, deployment runbook',              lead:'Gemini' },
+];
+const AI_ORDER = ['Claude','GPT-4o','Gemini'];
+const AI_CLASS = { 'Claude':'claude','GPT-4o':'gpt','Gemini':'gemini','User':'user' };
+const AI_EMOJI = { 'Claude':'🔵','GPT-4o':'🟣','Gemini':'🟢','User':'🟡' };
+
+let state = {
+  running: false,
+  paused: false,
+  phaseIdx: 0,
+  turnInPhase: 0,
+  totalTurns: 0,
+  history: [],
+  projectDesc: '',
+  sessionId: null,
+  claudeTurns: 0, gptTurns: 0, geminiTurns: 0, userTurns: 0,
+  currentAI: null,
+  extractedFiles: {},
+};
+
+// ═══════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  buildPhaseUI();
+  loadKeysFromStorage();
+  loadDefaults();
+  refreshSessions();
+  updatePhaseBar();
+  updateStats();
+  updateSidebarSession();
+});
+
+function buildPhaseUI() {
+  const list = document.getElementById('phaseList');
+  list.innerHTML = PHASES.map((p, i) => `
+    <div class="phase-item" id="phase-item-${i}" onclick="switchView('session')">
+      <div class="phase-num">${i+1}</div>
+      <div>
+        <div class="phase-name">${p.name}</div>
+        <div class="text-muted" style="font-size:10px">${p.goal.substring(0,30)}…</div>
+      </div>
+      <div class="phase-lead" style="color:${leadColor(p.lead)}">${p.lead[0]}</div>
+    </div>
+  `).join('');
+
+  const bar = document.getElementById('phaseBar');
+  bar.innerHTML = PHASES.map((p,i) => `<div class="phase-seg" id="phase-seg-${i}" title="${p.name}"></div>`).join('');
+}
+
+function leadColor(lead) {
+  return {Claude:'var(--claude)',GPT4o:'var(--gpt)','GPT-4o':'var(--gpt)',Gemini:'var(--gemini)'}[lead] || 'var(--muted)';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  VIEW SWITCHING
+// ═══════════════════════════════════════════════════════════
+function switchView(name) {
+  ['session','setup','sessions','output'].forEach(v => {
+    const el = document.getElementById('view-'+v);
+    const nav = document.getElementById('nav-'+v);
+    if (!el||!nav) return;
+    el.classList.toggle('hidden', v !== name);
+    if (v !== name) el.style.display = '';
+    else el.style.display = 'flex';
+    nav.classList.toggle('active', v === name);
+  });
+  if (name === 'sessions') refreshSessions();
+  if (name === 'output') refreshOutput();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  API KEYS
+// ═══════════════════════════════════════════════════════════
+function loadKeysFromStorage() {
+  const k = ['Anthropic','OpenAI','Gemini'];
+  k.forEach(name => {
+    const val = localStorage.getItem('aikey_'+name.toLowerCase()) || '';
+    const el = document.getElementById('key'+name);
+    if (el) el.value = val;
+    updateKeyStatus(name);
+  });
+  updateConnStatus();
+}
+
+function updateKeyStatus(name) {
+  const el = document.getElementById('key'+name);
+  const status = document.getElementById('status'+name);
+  if (!el || !status) return;
+  const val = el.value.trim();
+  if (val && val.length > 8) {
+    status.textContent = '✓ Set';
+    status.className = 'key-status key-set';
+  } else {
+    status.textContent = '✗ Missing';
+    status.className = 'key-status key-missing';
+  }
+}
+
+function markKeyDirty() {
+  ['Anthropic','OpenAI','Gemini'].forEach(updateKeyStatus);
+}
+
+function saveKeys() {
+  ['Anthropic','OpenAI','Gemini'].forEach(name => {
+    const el = document.getElementById('key'+name);
+    if (el) localStorage.setItem('aikey_'+name.toLowerCase(), el.value.trim());
+    updateKeyStatus(name);
+  });
+  updateConnStatus();
+  showToast('API keys saved!','gemini');
+}
+
+function toggleKey(id) {
+  const el = document.getElementById(id);
+  const btn = el.nextElementSibling;
+  if (el.type === 'password') { el.type='text'; btn.textContent='Hide'; }
+  else { el.type='password'; btn.textContent='Show'; }
+}
+
+function updateConnStatus() {
+  const keys = ['anthropic','openai','gemini'].map(k => localStorage.getItem('aikey_'+k)||'');
+  const allSet = keys.every(k => k.length > 8);
+  const dot = document.getElementById('connDot');
+  const label = document.getElementById('connLabel');
+  if (allSet) {
+    dot.className = 'status-dot dot-green';
+    label.textContent = 'All keys configured';
+    label.style.color = 'var(--gemini)';
+  } else {
+    dot.className = 'status-dot dot-gray';
+    label.textContent = 'API keys missing';
+    label.style.color = 'var(--muted)';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DEFAULTS
+// ═══════════════════════════════════════════════════════════
+function loadDefaults() {
+  const dp = localStorage.getItem('default_project') || '';
+  const mt = localStorage.getItem('max_turns') || '20';
+  const mh = localStorage.getItem('max_history') || '30';
+  document.getElementById('defaultProject').value = dp;
+  document.getElementById('maxTurns').value = mt;
+  document.getElementById('maxHistory').value = mh;
+}
+
+function saveDefaults() {
+  localStorage.setItem('default_project', document.getElementById('defaultProject').value);
+  localStorage.setItem('max_turns', document.getElementById('maxTurns').value);
+  localStorage.setItem('max_history', document.getElementById('maxHistory').value);
+  showToast('Defaults saved!','claude');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SESSION MANAGEMENT
+// ═══════════════════════════════════════════════════════════
+function newSessionId() {
+  return 'sess_' + Date.now().toString(36).toUpperCase();
+}
+
+function saveSession() {
+  if (!state.sessionId) return;
+  const sessions = JSON.parse(localStorage.getItem('sessions')||'{}');
+  sessions[state.sessionId] = {
+    id: state.sessionId,
+    savedAt: new Date().toISOString(),
+    projectDesc: state.projectDesc,
+    phaseIdx: state.phaseIdx,
+    totalTurns: state.totalTurns,
+    history: state.history,
+    extractedFiles: state.extractedFiles,
+  };
+  localStorage.setItem('sessions', JSON.stringify(sessions));
+}
+
+function loadSession(id) {
+  const sessions = JSON.parse(localStorage.getItem('sessions')||'{}');
+  return sessions[id] || null;
+}
+
+function refreshSessions() {
+  const sessions = JSON.parse(localStorage.getItem('sessions')||'{}');
+  const container = document.getElementById('sessionsList');
+  const items = Object.values(sessions).sort((a,b) => b.savedAt.localeCompare(a.savedAt));
+  if (!items.length) {
+    container.innerHTML = '<div class="text-muted" style="text-align:center;padding:40px">No saved sessions yet.</div>';
+    return;
+  }
+  container.innerHTML = items.map(s => {
+    const phase = PHASES[Math.min(s.phaseIdx, PHASES.length-1)].name;
+    const date = s.savedAt.substring(0,16).replace('T',' ');
+    const desc = (s.projectDesc||'').substring(0,70) + ((s.projectDesc||'').length>70?'…':'');
+    return `<div class="session-card" onclick="resumeSession('${s.id}')">
+      <div style="font-size:13px;font-weight:600">${desc || 'Untitled session'}</div>
+      <div class="session-meta">
+        <span>📅 ${date}</span>
+        <span>📌 Phase: ${phase}</span>
+        <span>🔄 ${s.totalTurns} turns</span>
+        <span style="margin-left:auto;cursor:pointer;color:var(--danger)" onclick="event.stopPropagation();deleteSession('${s.id}')">🗑</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function deleteSession(id) {
+  const sessions = JSON.parse(localStorage.getItem('sessions')||'{}');
+  delete sessions[id];
+  localStorage.setItem('sessions', JSON.stringify(sessions));
+  refreshSessions();
+}
+
+function clearAllSessions() {
+  if (!confirm('Delete all saved sessions? This cannot be undone.')) return;
+  localStorage.removeItem('sessions');
+  refreshSessions();
+}
+
+function resumeSession(id) {
+  const s = loadSession(id);
+  if (!s) return;
+  state.sessionId = s.id;
+  state.projectDesc = s.projectDesc;
+  state.phaseIdx = s.phaseIdx;
+  state.totalTurns = s.totalTurns;
+  state.history = s.history || [];
+  state.extractedFiles = s.extractedFiles || {};
+  // Replay history in chat
+  const chat = document.getElementById('chatArea');
+  chat.innerHTML = '';
+  state.history.forEach(entry => appendMsgToChat(entry.speaker, entry.text, false));
+  state.claudeTurns = state.history.filter(h=>h.speaker==='Claude').length;
+  state.gptTurns    = state.history.filter(h=>h.speaker==='GPT-4o').length;
+  state.geminiTurns = state.history.filter(h=>h.speaker==='Gemini').length;
+  state.userTurns   = state.history.filter(h=>h.speaker==='User').length;
+  updateStats();
+  updatePhaseUI();
+  updateSidebarSession();
+  switchView('session');
+  addSystemMsg('Session resumed from checkpoint. Phase: ' + PHASES[Math.min(state.phaseIdx,PHASES.length-1)].name);
+  setRunningUI(false);
+  document.getElementById('pauseBtn').disabled = false;
+  document.getElementById('endBtn').disabled = false;
+  showToast('Session resumed!','gemini');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SESSION FLOW (SIMULATED — requires Python backend to actually call APIs)
+// ═══════════════════════════════════════════════════════════
+async function handleSend() {
+  const input = document.getElementById('userInput');
+  const text = input.value.trim();
+  if (!text && !state.running) return;
+
+  if (!state.running && !state.paused) {
+    // Start new session
+    const keys = ['anthropic','openai','gemini'].map(k => localStorage.getItem('aikey_'+k)||'');
+    if (keys.some(k => k.length < 8)) {
+      showToast('Please configure all 3 API keys in Setup first.','danger');
+      switchView('setup');
+      return;
+    }
+    state.projectDesc = text;
+    state.sessionId = newSessionId();
+    state.history = [];
+    state.phaseIdx = 0;
+    state.turnInPhase = 0;
+    state.totalTurns = 0;
+    state.claudeTurns = state.gptTurns = state.geminiTurns = state.userTurns = 0;
+    state.extractedFiles = {};
+    state.running = true;
+    state.paused = false;
+    input.value = '';
+    appendMsgToChat('User', text);
+    state.history.push({speaker:'User',text});
+    state.userTurns++;
+    updateStats();
+    setRunningUI(true);
+    updatePhaseUI();
+    updateSidebarSession();
+    addSystemMsg('Session started! Connecting to all three AIs…');
+    // Start the AI turn loop
+    await runAILoop();
+  } else if (state.running && text) {
+    // Inject user guidance mid-session
+    input.value = '';
+    appendMsgToChat('User', text);
+    state.history.push({speaker:'User',text});
+    state.userTurns++;
+    updateStats();
+    saveSession();
+  }
+}
+
+function handleInputKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    handleSend();
+  }
+}
+
+// Simulated AI response (the real tool runs Python; this GUI shows the flow)
+async function runAILoop() {
+  while (state.running && !state.paused && state.phaseIdx < PHASES.length) {
+    const phase = PHASES[state.phaseIdx];
+    for (const aiName of AI_ORDER) {
+      if (!state.running || state.paused) break;
+      state.currentAI = aiName;
+      state.totalTurns++;
+      state.turnInPhase++;
+      updateSidebarSession();
+      setStatus(`${aiName} is responding… (phase ${state.phaseIdx+1}/6: ${phase.name})`);
+      showTyping(aiName);
+      const response = await simulateAIResponse(aiName, phase);
+      hideTyping();
+      appendMsgToChat(aiName, response);
+      state.history.push({speaker:aiName,text:response});
+      if (aiName==='Claude') state.claudeTurns++;
+      else if (aiName==='GPT-4o') state.gptTurns++;
+      else state.geminiTurns++;
+      updateStats();
+      extractFilesFromResponse(response);
+      saveSession();
+      // Check for phase signal
+      if (response.includes('PHASE_COMPLETE')) {
+        addSystemMsg(`✅ ${aiName} marked phase ${phase.name} complete!`);
+        state.phaseIdx++;
+        state.turnInPhase = 0;
+        updatePhaseUI();
+        if (state.phaseIdx >= PHASES.length) {
+          addSystemMsg('🎉 All phases complete! Project done. Check Output tab for generated files.');
+          setRunningUI(false);
+          state.running = false;
+          refreshOutput();
+          showToast('Project complete!','gemini');
+          return;
+        }
+        break;
+      }
+      if (response.includes('PROJECT_COMPLETE')) {
+        addSystemMsg('🎉 Project fully complete!');
+        setRunningUI(false);
+        state.running = false;
+        refreshOutput();
+        showToast('Project complete!','gemini');
+        return;
+      }
+      await sleep(400);
+    }
+    if (state.turnInPhase >= 20) {
+      addSystemMsg(`⏭ Turn limit reached for ${phase.name}. Advancing…`);
+      state.phaseIdx++;
+      state.turnInPhase = 0;
+      updatePhaseUI();
+    }
+  }
+  if (!state.paused) setRunningUI(false);
+}
+
+async function simulateAIResponse(aiName, phase) {
+  const delay = 800 + Math.random()*600;
+  await sleep(delay);
+  const reviews = ['✅ Review: Previous output looks solid. No syntax errors detected.', '✅ Review: Logic checks out. Proceeding with my contribution.', '⚠ Review: Minor issue in previous output — variable shadowing on line ~12. Here\'s the fix: `result = process(data)`'];
+  const review = reviews[Math.floor(Math.random()*reviews.length)];
+  const handoffs = {
+    'Claude':'GPT-4o, please review my work and continue.',
+    'GPT-4o':'Gemini, please review and continue.',
+    'Gemini':'Claude, please review and take the next turn.',
+  };
+  const contributions = {
+    PLAN:   { Claude: `## Requirements Analysis\n\nBased on the project description, here are the key requirements:\n\n**Functional:**\n- Core feature set as described\n- User-facing CLI interface\n- Configurable via environment variables\n\n**Non-functional:**\n- Must run on Python 3.9+\n- Sub-2s response time\n- Graceful error handling`, GPT4o:'', Gemini:'' },
+    DESIGN: { Claude:`## Architecture\n\n\`\`\`\nproject/\n├── main.py        # Entry point\n├── core/\n│   ├── engine.py  # Business logic\n│   └── models.py  # Data models\n├── utils/\n│   └── helpers.py\n└── tests/\n    └── test_core.py\n\`\`\`\n\n**Tech stack:** Python 3.11, dataclasses, argparse, pytest`, GPT4o:'', Gemini:'' },
+    BUILD:  { Gemini:`## Implementation\n\n\`\`\`python:main.py\n#!/usr/bin/env python3\n"""Main entry point."""\nimport argparse\nfrom core.engine import Engine\n\ndef main():\n    parser = argparse.ArgumentParser(description=\"AI-generated tool\")\n    parser.add_argument(\"--input\", required=True)\n    args = parser.parse_args()\n    engine = Engine()\n    result = engine.run(args.input)\n    print(result)\n\nif __name__ == \"__main__\":\n    main()\n\`\`\`` },
+    TEST:   { 'GPT-4o':`## Test Suite\n\n\`\`\`python:tests/test_core.py\nimport pytest\nfrom core.engine import Engine\n\ndef test_engine_runs():\n    e = Engine()\n    assert e is not None\n\ndef test_engine_processes_input():\n    e = Engine()\n    result = e.run(\"sample input\")\n    assert result is not None\n    assert isinstance(result, str)\n\ndef test_edge_case_empty_input():\n    e = Engine()\n    with pytest.raises(ValueError):\n        e.run(\"\")\n\`\`\`` },
+    DOCS:   { 'GPT-4o':`## README.md\n\n\`\`\`markdown:README.md\n# Project\n\nAI-generated project.\n\n## Installation\n\`\`\`bash\npip install -r requirements.txt\n\`\`\`\n\n## Usage\n\`\`\`bash\npython main.py --input \"your data\"\n\`\`\`\n\n## License\nMIT\n\`\`\`` },
+    SHIP:   { Gemini:`## Dockerfile\n\n\`\`\`dockerfile:Dockerfile\nFROM python:3.11-slim\nWORKDIR /app\nCOPY requirements.txt .\nRUN pip install -r requirements.txt\nCOPY . .\nCMD [\"python\", \"main.py\"]\n\`\`\`\n\n**PHASE_COMPLETE**` },
+  };
+  const phaseMap = {PLAN:'PLAN',DESIGN:'DESIGN',BUILD:'BUILD',TEST:'TEST',DOCS:'DOCS',SHIP:'SHIP'};
+  const pKey = phaseMap[phase.name] || 'PLAN';
+  const aiKey = aiName === 'GPT-4o' ? 'GPT-4o' : aiName;
+  const contrib = contributions[pKey]?.[aiKey] || contributions[pKey]?.[aiName] || `Contributing to ${phase.name} phase. [Simulated response — connect the Python backend to get real AI output.]`;
+  return `${review}\n\n${contrib}\n\n${handoffs[aiName]}`;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ═══════════════════════════════════════════════════════════
+//  PHASE CONTROLS
+// ═══════════════════════════════════════════════════════════
+function nextPhase() {
+  if (state.phaseIdx >= PHASES.length - 1) return;
+  state.phaseIdx++;
+  state.turnInPhase = 0;
+  updatePhaseUI();
+  addSystemMsg(`⏭ Manually advanced to phase ${PHASES[state.phaseIdx].name}`);
+  saveSession();
+}
+
+function pauseSession() {
+  state.paused = true;
+  state.running = false;
+  setRunningUI(false);
+  addSystemMsg('⏸ Session paused. Press ▶ Start to resume or End to finish.');
+  document.getElementById('sendBtn').textContent = '▶ Resume';
+  saveSession();
+  showToast('Session paused','claude');
+}
+
+function endSession() {
+  state.running = false;
+  state.paused = false;
+  setRunningUI(false);
+  addSystemMsg('⏹ Session ended. Check Output tab for generated files.');
+  refreshOutput();
+  showToast('Session ended','gpt');
+  saveSession();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  CHAT HELPERS
+// ═══════════════════════════════════════════════════════════
+function appendMsgToChat(speaker, text, scroll=true) {
+  const chat = document.getElementById('chatArea');
+  const cls = AI_CLASS[speaker] || 'system';
+  const emoji = AI_EMOJI[speaker] || 'ℹ';
+  const div = document.createElement('div');
+  div.className = `msg ${cls}`;
+  div.innerHTML = `
+    <div class="msg-header">${emoji} ${speaker}</div>
+    <div class="msg-bubble">${escHtml(text)}</div>
+  `;
+  chat.appendChild(div);
+  if (scroll && document.getElementById('autoScrollCheck')?.checked !== false) {
+    chat.scrollTop = chat.scrollHeight;
+  }
+}
+
+let typingEl = null;
+function showTyping(aiName) {
+  hideTyping();
+  const chat = document.getElementById('chatArea');
+  const cls = AI_CLASS[aiName] || 'claude';
+  typingEl = document.createElement('div');
+  typingEl.className = `msg ${cls}`;
+  typingEl.innerHTML = `<div class="msg-header">${AI_EMOJI[aiName]} ${aiName}</div><div class="typing"><span></span><span></span><span></span></div>`;
+  chat.appendChild(typingEl);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function hideTyping() {
+  if (typingEl) { typingEl.remove(); typingEl = null; }
+}
+
+function addSystemMsg(text) {
+  const chat = document.getElementById('chatArea');
+  const div = document.createElement('div');
+  div.className = 'msg system';
+  div.innerHTML = `<div class="msg-bubble">${escHtml(text)}</div>`;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  UI UPDATES
+// ═══════════════════════════════════════════════════════════
+function setStatus(text) {
+  document.getElementById('statusText').textContent = text;
+}
+
+function setRunningUI(running) {
+  document.getElementById('sendBtn').disabled = running;
+  document.getElementById('sendBtn').textContent = running ? '⏳ Running…' : (state.paused ? '▶ Resume' : '▶ Start');
+  document.getElementById('pauseBtn').disabled = !running;
+  document.getElementById('endBtn').disabled = !running && !state.paused;
+  if (!running && !state.paused) setStatus('Ready');
+}
+
+function updateStats() {
+  document.getElementById('statClaude').textContent = state.claudeTurns;
+  document.getElementById('statGpt').textContent    = state.gptTurns;
+  document.getElementById('statGemini').textContent = state.geminiTurns;
+  document.getElementById('statUser').textContent   = state.userTurns;
+  document.getElementById('statTotal').textContent  = state.totalTurns;
+}
+
+function updatePhaseUI() {
+  PHASES.forEach((p, i) => {
+    const item = document.getElementById(`phase-item-${i}`);
+    const seg  = document.getElementById(`phase-seg-${i}`);
+    if (!item || !seg) return;
+    item.className = 'phase-item' + (i < state.phaseIdx ? ' done' : i === state.phaseIdx ? ' active' : '');
+    seg.className  = 'phase-seg'  + (i < state.phaseIdx ? ' done' : i === state.phaseIdx ? ' active' : '');
+  });
+}
+
+function updatePhaseBar() { updatePhaseUI(); }
+
+function updateSidebarSession() {
+  document.getElementById('sideSessionId').textContent = state.sessionId || '—';
+  document.getElementById('sideTurns').textContent = state.totalTurns + ' turns';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  FILE EXTRACTION & OUTPUT
+// ═══════════════════════════════════════════════════════════
+function extractFilesFromResponse(text) {
+  const blockRe = /\`\`\`([w.+-]*)
+([sS]*?)\`\`\`/g;
+  let m;
+  while ((m = blockRe.exec(text)) !== null) {
+    let lang = m[1].trim().toLowerCase();
+    let code = m[2].rstrip ? m[2].rstrip() : m[2].trimEnd();
+    let fname = null;
+    const colon = lang.indexOf(':');
+    if (colon !== -1) { fname = lang.slice(colon+1); lang = lang.slice(0,colon); }
+    if (!fname) {
+      const firstLine = code.split('
+')[0];
+      const match = firstLine.match(/^(?:#|//|--|<!--)s*([w./\\-]+.[w]{1,6})s*$/);
+      if (match) { fname = match[1]; code = code.split('
+').slice(1).join('
+'); }
+    }
+    if (!fname) {
+      const extMap = {python:'py',py:'py',javascript:'js',js:'js',typescript:'ts',ts:'ts',
+                      bash:'sh',sh:'sh',html:'html',css:'css',json:'json',yaml:'yml',
+                      dockerfile:'dockerfile',sql:'sql'};
+      const ext = extMap[lang] || lang || 'txt';
+      const count = Object.keys(state.extractedFiles).filter(k=>k.endsWith('.'+ext)).length;
+      fname = `unnamed_${count+1}.${ext}`;
+    }
+    if (!state.extractedFiles[fname]) state.extractedFiles[fname] = code;
+  }
+}
+
+function refreshOutput() {
+  const tree = document.getElementById('fileTree');
+  const files = Object.entries(state.extractedFiles);
+  if (!files.length) {
+    tree.innerHTML = '<div class="text-muted" style="text-align:center;padding:30px 10px;font-size:12px">No files yet.</div>';
+    document.getElementById('dlTranscript').disabled = !state.history.length;
+    document.getElementById('dlCode').disabled = true;
+    return;
+  }
+  document.getElementById('dlTranscript').disabled = false;
+  document.getElementById('dlCode').disabled = false;
+  const icons = {py:'🐍',js:'📜',ts:'📘',html:'🌐',css:'🎨',json:'📋',yml:'⚙',yaml:'⚙',
+                 sh:'💻',dockerfile:'🐳',md:'📝',txt:'📄'};
+  tree.innerHTML = files.map(([name,code]) => {
+    const ext = name.split('.').pop().toLowerCase();
+    const icon = icons[ext] || '📄';
+    const lines = code.split('
+').length;
+    return `<div class="file-item" onclick="previewFile('${escHtml(name).replace(/'/g,'\\\'')}')">
+      <span class="file-icon">${icon}</span>
+      <span class="file-name">${escHtml(name)}</span>
+      <span class="file-size">${lines}L</span>
+    </div>`;
+  }).join('');
+}
+
+function previewFile(name) {
+  const code = state.extractedFiles[name];
+  if (!code) return;
+  document.getElementById('codeFilename').textContent = name;
+  document.getElementById('codeContent').textContent = code;
+}
+
+function downloadTranscript() {
+  if (!state.history.length) return;
+  let md = '# AI Collaboration Transcript
+
+';
+  md += `**Project:** ${state.projectDesc}
+
+`;
+  md += `**Total turns:** ${state.totalTurns}
+
+---
+
+`;
+  state.history.forEach(e => { md += `## [${e.speaker}]
+
+${e.text}
+
+---
+
+`; });
+  downloadFile('TRANSCRIPT.md', md);
+}
+
+function downloadCode() {
+  Object.entries(state.extractedFiles).forEach(([name,code]) => {
+    downloadFile(name, code);
+  });
+}
+
+function downloadFile(name, content) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], {type:'text/plain'}));
+  a.download = name;
+  a.click();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  MODAL
+// ═══════════════════════════════════════════════════════════
+function showModal(name) {
+  document.getElementById(name+'Modal').classList.remove('hidden');
+}
+function hideModal(name) {
+  document.getElementById(name+'Modal').classList.add('hidden');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SETTINGS
+// ═══════════════════════════════════════════════════════════
+function applyTheme(v) {
+  const themes = {dark:{bg:'#0d1117',surface:'#161b22',surface2:'#21262d'},
+                  darker:{bg:'#080c10',surface:'#0d1117',surface2:'#161b22'},
+                  dim:{bg:'#1c1c1c',surface:'#242424',surface2:'#2e2e2e'}};
+  const t = themes[v] || themes.dark;
+  Object.entries(t).forEach(([k,v]) => document.documentElement.style.setProperty('--'+k,v));
+}
+
+function applyFontSize(size) {
+  document.querySelectorAll('.msg-bubble,.form-input,.nav-item,.file-name').forEach(el => {
+    el.style.fontSize = size+'px';
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  TOAST
+// ═══════════════════════════════════════════════════════════
+function showToast(msg, type='claude') {
+  const colors = {claude:'var(--claude)',gpt:'var(--gpt)',gemini:'var(--gemini)',danger:'var(--danger)'};
+  const t = document.createElement('div');
+  t.style.cssText = `position:fixed;bottom:20px;right:20px;background:var(--surface2);border:1px solid ${colors[type]||colors.claude};border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;color:${colors[type]||colors.claude};z-index:200;box-shadow:0 4px 20px rgba(0,0,0,.4);transition:opacity .3s`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity='0'; setTimeout(()=>t.remove(),300); }, 2500);
+}
+</script>
+</body>
+</html>
