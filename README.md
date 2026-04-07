@@ -8,6 +8,59 @@ Each AI leads specific phases and reviews every other AI's output every turn.
 
 ---
 
+## Portable / No-install Setup
+
+No Python or dependencies need to be installed on the system. Everything lives inside the project folder.
+
+### 1. Download the repo
+
+Download as a ZIP from GitHub and extract it, or clone with git:
+
+```
+git clone <repo-url>
+cd <project-folder>
+```
+
+### 2. Add your API keys
+
+Copy `.env.example` to `.env` and fill in your keys:
+
+```
+cp .env.example .env
+# then edit .env with your ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY
+```
+
+### 3. Run setup (once, needs internet)
+
+**Windows:**
+```
+setup_portable.bat
+```
+Checks for system Python (installs it silently if missing), creates a local `.venv`, installs all dependencies, and loads keys from `.env`.
+
+**Mac / Linux:**
+```bash
+chmod +x setup_portable.sh
+./setup_portable.sh
+```
+Locates Python 3.8+, creates a local `.venv`, installs all dependencies, and loads keys from `.env`.
+
+### 4. Launch the tool
+
+**Windows:**
+```
+run_portable.bat
+```
+
+**Mac / Linux:**
+```bash
+./run_portable.sh
+```
+
+That's it. No global pip installs, no environment conflicts.
+
+---
+
 ## Portable USB Setup (no install required)
 
 Copy the entire folder to a USB drive. The tool carries its own Python and packages.
@@ -18,13 +71,12 @@ Copy the entire folder to a USB drive. The tool carries its own Python and packa
 ```
 setup_portable.bat
 ```
-Downloads Python 3.12 embeddable + all packages directly onto the drive.
+Downloads Python 3.12 or uses your existing system Python, creates a `.venv` in the project folder, and installs all packages.
 
 **Every time after:**
 ```
-run.bat
+run_portable.bat
 ```
-Uses the bundled Python at `.python\` — no system Python needed.
 
 ### Mac / Linux
 
@@ -32,12 +84,13 @@ Python 3 is already on every Mac and Linux machine. On first run a `.venv/`
 folder is created on the USB drive and packages are installed inside it.
 
 ```bash
-chmod +x run.sh   # once
-./run.sh
+chmod +x setup_portable.sh   # once
+./setup_portable.sh
+./run_portable.sh
 ```
 
-The `.venv/` folder travels with the USB drive. On a new machine the script
-detects if packages are missing and reinstalls automatically.
+The `.venv/` folder travels with the USB drive. On a new machine just re-run
+`setup_portable.sh` to reinstall packages.
 
 ---
 
@@ -45,38 +98,30 @@ detects if packages are missing and reinstalls automatically.
 
 ```
 AI-Collaboration-Tool/
-├── ai_collaboration.py   ← main tool
-├── test_apis.py          ← verify all three API keys work
+├── ai_collaboration.py     ← main tool
+├── test_apis.py            ← verify all three API keys work
 ├── requirements.txt
-├── run.bat               ← Windows launcher
-├── run.sh                ← Mac / Linux launcher
-├── setup_portable.bat    ← Windows first-time setup (downloads Python)
+├── setup_portable.bat      ← Windows first-time setup
+├── run_portable.bat        ← Windows launcher
+├── setup_portable.sh       ← Mac/Linux first-time setup
+├── run_portable.sh         ← Mac/Linux launcher
+├── .env.example            ← copy to .env and fill in keys
 ├── README.md
-├── .python/              ← embedded Python (Windows, created by setup_portable.bat)
-└── .venv/                ← packages venv (Mac/Linux, created on first run)
+└── .venv/                  ← packages venv (created by setup scripts)
 ```
 
 ---
 
 ## API Keys
 
-Set these as environment variables before running. They are never stored in any file.
+Copy `.env.example` to `.env` and fill in your keys. The `.env` file is listed in
+`.gitignore` and will never be committed.
 
 | Variable | Where to get it |
 |---|---|
 | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com/settings/keys) |
 | `OPENAI_API_KEY` | [platform.openai.com](https://platform.openai.com/api-keys) |
 | `GEMINI_API_KEY` | [aistudio.google.com](https://aistudio.google.com/apikey) |
-
-**Windows** — set permanently:
-Start → "Edit system environment variables" → Environment Variables → New
-
-**Mac / Linux** — add to `~/.bashrc` or `~/.zshrc`:
-```bash
-export ANTHROPIC_API_KEY=(YOURAPIKEYHERE)
-export OPENAI_API_KEY=(YOURAPIKEYHERE)
-export GEMINI_API_KEY=(YYOURAPIKEYHERE)
-```
 
 ---
 
