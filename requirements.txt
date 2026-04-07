@@ -1,5 +1,11 @@
+# Core AI SDKs
 anthropic>=0.40.0
-google-genai>=0.8.0
 openai>=1.0.0
-pyinstaller>=6.0.0
-watchdog>=3.0.0
+google-genai>=0.8.0
+
+# Environment variable loading from .env file
+python-dotenv>=1.0.0
+
+# Optional: compile AI-generated code into a standalone executable at end of session
+# Install manually if you want this feature: pip install pyinstaller
+# pyinstaller>=6.0.0
