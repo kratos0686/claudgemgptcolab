@@ -1,70 +1,62 @@
 @echo off
-setlocal EnableDelayedExpansion
-title AI Collaboration Tool - Portable Setup
+setlocal enabledelayedexpansion
+title AI Collaboration Tool - Setup
 
-set "DIR=%~dp0"
-set "PYDIR=%DIR%.python"
-set "PYVER=3.12.9"
-set "PYZIP=python-%PYVER%-embed-amd64.zip"
-set "PYURL=https://www.python.org/ftp/python/%PYVER%/%PYZIP%"
-set "PIPURL=https://bootstrap.pypa.io/get-pip.py"
-
-echo.
-echo ================================================================
-echo   AI Collaboration Tool -- Portable USB Setup (Windows)
-echo ================================================================
-echo.
-echo  This will download Python %PYVER% and all dependencies
-echo  directly onto this drive. No system install required.
+echo ============================================
+echo  AI Collaboration Tool - Portable Setup
+echo ============================================
 echo.
 
-if exist "%PYDIR%\python.exe" (
-    echo  Python already present at .python\  -- skipping download.
-    goto :deps
-)
-
-:: ── Download Python embeddable ───────────────────────────────────────────────
-echo  [1/4] Downloading Python %PYVER% embeddable ...
-powershell -NoProfile -Command ^
-  "Invoke-WebRequest -Uri '%PYURL%' -OutFile '%DIR%%PYZIP%'" ^
-  2>nul
-if not exist "%DIR%%PYZIP%" (
+REM Check if Python is installed
+python --version >nul 2>&1
+if errorlevel 1 (
+    echo Python not found. Downloading and installing Python 3.11...
     echo.
-    echo  ERROR: Download failed. Check your internet connection.
-    pause & exit /b 1
+    powershell -Command "Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe' -OutFile '%TEMP%\python_installer.exe'"
+    "%TEMP%\python_installer.exe" /quiet InstallAllUsers=0 PrependPath=1 Include_test=0
+    del "%TEMP%\python_installer.exe"
+    echo Python installed. Please restart this script.
+    pause
+    exit /b 0
 )
 
-:: ── Extract ──────────────────────────────────────────────────────────────────
-echo  [2/4] Extracting ...
-powershell -NoProfile -Command ^
-  "Expand-Archive -Path '%DIR%%PYZIP%' -DestinationPath '%PYDIR%' -Force"
-del "%DIR%%PYZIP%"
+echo Python found:
+python --version
+echo.
 
-:: ── Enable site-packages (required for pip to work in embeddable) ────────────
-echo  [3/4] Enabling site-packages ...
-for %%F in ("%PYDIR%\python3*._pth") do (
-    powershell -NoProfile -Command ^
-      "(Get-Content '%%F') -replace '#import site','import site' | Set-Content '%%F'"
+REM Create local venv if it doesn't exist
+if not exist ".venv" (
+    echo Creating local virtual environment...
+    python -m venv .venv
+    echo Done.
+    echo.
 )
 
-:: ── Install pip ──────────────────────────────────────────────────────────────
-echo  [4/4] Installing pip ...
-powershell -NoProfile -Command ^
-  "Invoke-WebRequest -Uri '%PIPURL%' -OutFile '%PYDIR%\get-pip.py'"
-"%PYDIR%\python.exe" "%PYDIR%\get-pip.py" --no-warn-script-location -q
-del "%PYDIR%\get-pip.py"
-
-:deps
-:: ── Install / update dependencies ───────────────────────────────────────────
+REM Activate venv and install dependencies
+echo Installing dependencies into local .venv...
+call .venv\Scripts\activate.bat
+pip install --quiet --upgrade pip
+pip install --quiet -r requirements.txt
+echo Done.
 echo.
-echo  Installing dependencies into portable Python ...
-"%PYDIR%\python.exe" -m pip install -q --no-warn-script-location ^
-    anthropic>=0.40.0 google-genai>=0.8.0 openai>=1.0.0 pyinstaller>=6.0.0
+
+REM Check for .env file
+if exist ".env" (
+    echo Found .env file - API keys will be loaded automatically.
+) else (
+    echo No .env file found. Copying .env.example to .env...
+    copy .env.example .env >nul
+    echo.
+    echo IMPORTANT: Open .env and fill in your API keys before running the tool.
+    echo   - ANTHROPIC_API_KEY
+    echo   - OPENAI_API_KEY
+    echo   - GEMINI_API_KEY
+)
 
 echo.
-echo ================================================================
-echo   Setup complete!
-echo   Run the tool with:  run.bat
-echo ================================================================
+echo ============================================
+echo  Setup complete!
+echo  Run 'run_portable.bat' to start the tool.
+echo ============================================
 echo.
 pause
