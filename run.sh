@@ -15,10 +15,31 @@ echo ""
 # ── Load .env if present ──────────────────────────────────────────────────────
 if [[ -f "$DIR/.env" ]]; then
     echo "  Loading API keys from .env ..."
-    set -a
-    # shellcheck disable=SC1091
-    source "$DIR/.env"
-    set +a
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+
+        if [[ "$line" =~ ^[[:space:]]*export[[:space:]]+ ]]; then
+            line="${line#export }"
+        fi
+
+        [[ "$line" == *=* ]] || continue
+
+        key="${line%%=*}"
+        value="${line#*=}"
+
+        key="${key#"${key%%[![:space:]]*}"}"
+        key="${key%"${key##*[![:space:]]}"}"
+
+        [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+
+        if [[ "$value" =~ ^\".*\"$ ]] || [[ "$value" =~ ^\'.*\'$ ]]; then
+            value="${value:1:${#value}-2}"
+        fi
+
+        printf -v "$key" '%s' "$value"
+        export "$key"
+    done < "$DIR/.env"
 fi
 
 # ── Check API keys ────────────────────────────────────────────────────────────
