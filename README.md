@@ -48,8 +48,10 @@ Uses the bundled Python — no system Python required. Also loads API keys from 
 
 ## Mac / Linux — Portable folder
 
-Python 3 ships on every Mac and most Linux distros. On first run, `run.sh` creates a
-self-contained `.venv/` inside the folder and installs all packages there.
+`run.sh` requires Python 3. Many Linux distros include it by default, but on macOS you
+may need to install Python 3 first (for example via Homebrew or from python.org). On
+first run, `run.sh` creates a self-contained `.venv/` inside the folder and installs
+all packages there.
 
 ```bash
 chmod +x run.sh   # once
