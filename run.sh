@@ -16,11 +16,17 @@ echo ""
 if [[ -f "$DIR/.env" ]]; then
     echo "  Loading API keys from .env ..."
     while IFS= read -r line || [[ -n "$line" ]]; do
+        # Normalize CRLF files edited on Windows
+        line="${line%$'\r'}"
+
         [[ "$line" =~ ^[[:space:]]*$ ]] && continue
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
 
-        if [[ "$line" =~ ^[[:space:]]*export[[:space:]]+ ]]; then
-            line="${line#export }"
+        # Trim leading whitespace once, then normalize optional 'export'
+        line="${line#"${line%%[![:space:]]*}"}"
+        if [[ "$line" =~ ^export[[:space:]]+ ]]; then
+            line="${line#export}"
+            line="${line#"${line%%[![:space:]]*}"}"
         fi
 
         [[ "$line" == *=* ]] || continue
@@ -34,7 +40,7 @@ if [[ -f "$DIR/.env" ]]; then
         [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
 
         if [[ "$value" =~ ^\".*\"$ ]] || [[ "$value" =~ ^\'.*\'$ ]]; then
-            value="${value:1:${#value}-2}"
+            value="${value:1:${`#value`}-2}"
         fi
 
         printf -v "$key" '%s' "$value"
