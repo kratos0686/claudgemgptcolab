@@ -78,7 +78,7 @@ pause & exit /b 1
 "%PY%" -c "import anthropic, openai, dotenv; from google import genai" >nul 2>&1
 if errorlevel 1 (
     echo   Installing dependencies ...
-    "%PY%" -m pip install -q -r "%DIR%requirements.txt"
+    "%PY%" -m pip install -q -r "%DIR%requirements.txt" || exit /b 1
     echo   Dependencies installed.
 ) else (
     echo   Dependencies: OK
