@@ -1,0 +1,145 @@
+name: Build & Release
+
+# Trigger on version tags (e.g. v1.0.0) or manual dispatch
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to create GitHub Releases
+
+jobs:
+  # ── Windows: build standalone .exe with PyInstaller ─────────────────────────
+  build-windows-exe:
+    name: Windows standalone .exe
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build dependencies
+        run: |
+          pip install --upgrade pip
+          pip install anthropic openai google-genai python-dotenv pyinstaller
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller `
+            --onefile `
+            --name ai_collaboration `
+            --hidden-import anthropic `
+            --hidden-import openai `
+            --hidden-import google.genai `
+            --hidden-import dotenv `
+            ai_collaboration.py
+
+      - name: Package Windows standalone zip
+        run: |
+          New-Item -ItemType Directory -Force -Path dist\ai-collab-windows | Out-Null
+          Copy-Item dist\ai_collaboration.exe dist\ai-collab-windows\
+          Copy-Item .env.example              dist\ai-collab-windows\
+          Copy-Item README.md                 dist\ai-collab-windows\
+          # Minimal README for the exe bundle
+          @"
+          AI Collaboration Tool — Windows Standalone
+          ==========================================
+
+          1. Copy .env.example to .env
+          2. Open .env and paste your three API keys
+          3. Double-click ai_collaboration.exe  (or run from a terminal)
+
+          Get your keys:
+            ANTHROPIC_API_KEY : https://console.anthropic.com
+            OPENAI_API_KEY    : https://platform.openai.com/api-keys
+            GEMINI_API_KEY    : https://aistudio.google.com/app/apikey
+          "@ | Set-Content dist\ai-collab-windows\QUICKSTART.txt
+          Compress-Archive -Path dist\ai-collab-windows\* `
+            -DestinationPath dist\ai-collab-windows-standalone.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-standalone-zip
+          path: dist/ai-collab-windows-standalone.zip
+
+  # ── Cross-platform: portable source zip (setup_portable + run scripts) ───────
+  build-portable-zip:
+    name: Portable source zip (all platforms)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build portable zip
+        run: |
+          mkdir -p dist/ai-collab-portable
+          cp ai_collaboration.py      dist/ai-collab-portable/
+          cp autonomous_agent.py      dist/ai-collab-portable/
+          cp agent_integration.py     dist/ai-collab-portable/
+          cp launch_agent.py          dist/ai-collab-portable/
+          cp test_apis.py             dist/ai-collab-portable/
+          cp requirements.txt         dist/ai-collab-portable/
+          cp .env.example             dist/ai-collab-portable/
+          cp README.md                dist/ai-collab-portable/
+          cp run.bat                  dist/ai-collab-portable/
+          cp run.sh                   dist/ai-collab-portable/
+          cp setup_portable.bat       dist/ai-collab-portable/
+          chmod +x dist/ai-collab-portable/run.sh
+          cd dist
+          zip -r ai-collab-portable.zip ai-collab-portable/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portable-zip
+          path: dist/ai-collab-portable.zip
+
+  # ── Create GitHub Release with both assets ───────────────────────────────────
+  release:
+    name: Publish GitHub Release
+    needs: [build-windows-exe, build-portable-zip]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-standalone-zip
+          path: dist/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: portable-zip
+          path: dist/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/ai-collab-windows-standalone.zip
+            dist/ai-collab-portable.zip
+          body: |
+            ## Downloads
+
+            | File | Platform | Notes |
+            |------|----------|-------|
+            | `ai-collab-windows-standalone.zip` | Windows | Single `.exe` — no Python needed |
+            | `ai-collab-portable.zip` | Windows / Mac / Linux | Source + launcher scripts |
+
+            ### Quick start (Windows standalone)
+            1. Download and unzip `ai-collab-windows-standalone.zip`
+            2. Copy `.env.example` → `.env` and fill in your API keys
+            3. Run `ai_collaboration.exe`
+
+            ### Quick start (Mac / Linux)
+            1. Download and unzip `ai-collab-portable.zip`
+            2. Copy `.env.example` → `.env` and fill in your API keys
+            3. `chmod +x run.sh && ./run.sh`
+
+            ### Quick start (Windows without Python)
+            1. Download and unzip `ai-collab-portable.zip`
+            2. Copy `.env.example` → `.env` and fill in your keys
+            3. Run `setup_portable.bat` (one-time, downloads ~30 MB)
+            4. Run `run.bat` every time after

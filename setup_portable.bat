@@ -39,6 +39,11 @@ pip install --quiet --upgrade pip
 pip install --quiet -r requirements.txt
 echo Done.
 echo.
+<<<<<<< HEAD
+echo  Installing dependencies into portable Python ...
+"%PYDIR%\python.exe" -m pip install -q --no-warn-script-location ^
+    anthropic>=0.40.0 google-genai>=0.8.0 openai>=1.0.0 python-dotenv>=1.0.0 pyinstaller>=6.0.0
+=======
 
 REM Check for .env file
 if exist ".env" (
@@ -52,6 +57,7 @@ if exist ".env" (
     echo   - OPENAI_API_KEY
     echo   - GEMINI_API_KEY
 )
+>>>>>>> origin/claude/ai-collaboration-tool-RcBvx
 
 echo.
 echo ============================================
