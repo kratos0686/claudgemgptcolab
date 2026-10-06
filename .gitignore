@@ -60,3 +60,9 @@ __pycache__/
 build_*/
 *.zip
 *.spec
+
+# Claude Code worktrees (local only)
+.claude/worktrees/
+
+# Temp cleanup scripts
+do_cleanup*.bat
